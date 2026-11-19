@@ -83,15 +83,15 @@ function intern(a: readonly string[], b: readonly string[]): [Int32Array, Int32A
   return [map(a), map(b)];
 }
 
-/** Greedy in-order matching of `a` against `b`; returns the matched indices of `a`. */
-function greedyMatch(a: Int32Array, b: Int32Array): boolean[] {
+/** Greedy in-order matching of `a` against `b` (a lower bound of the LCS), as index pairs. */
+function greedyPairs(a: Int32Array, b: Int32Array): Array<[number, number]> {
   const positions = new Map<number, number[]>();
   for (let j = 0; j < b.length; j++) {
     const list = positions.get(b[j]!);
     if (list) list.push(j);
     else positions.set(b[j]!, [j]);
   }
-  const matched = new Array<boolean>(a.length).fill(false);
+  const pairs: Array<[number, number]> = [];
   let last = -1;
   for (let i = 0; i < a.length; i++) {
     const list = positions.get(a[i]!);
@@ -105,17 +105,17 @@ function greedyMatch(a: Int32Array, b: Int32Array): boolean[] {
     }
     if (lo < list.length) {
       last = list[lo]!;
-      matched[i] = true;
+      pairs.push([i, last]);
     }
   }
-  return matched;
+  return pairs;
 }
 
 export function lcsLength(a: readonly string[], b: readonly string[]): number {
   if (a.length === 0 || b.length === 0) return 0;
   const [x, y] = intern(a, b);
   if (x.length * y.length > LCS_MAX_CELLS) {
-    return greedyMatch(x, y).filter(Boolean).length;
+    return greedyPairs(x, y).length;
   }
   let prev = new Int32Array(y.length + 1);
   let cur = new Int32Array(y.length + 1);
@@ -130,14 +130,14 @@ export function lcsLength(a: readonly string[], b: readonly string[]): number {
 }
 
 /**
- * Which tokens of `a` take part in one longest common subsequence with `b`.
- * Used to find runs of content that one device heard and another did not.
+ * One longest common subsequence of `a` and `b` as ascending index pairs `[i, j]`
+ * (`a[i] === b[j]`). Tells both which tokens one device heard that another did not, and
+ * where in the other device's text the matching words are.
  */
-export function lcsMatchedMask(a: readonly string[], b: readonly string[]): boolean[] {
-  const matched = new Array<boolean>(a.length).fill(false);
-  if (a.length === 0 || b.length === 0) return matched;
+export function lcsAlignment(a: readonly string[], b: readonly string[]): Array<[number, number]> {
+  if (a.length === 0 || b.length === 0) return [];
   const [x, y] = intern(a, b);
-  if (x.length * y.length > LCS_MAX_CELLS) return greedyMatch(x, y);
+  if (x.length * y.length > LCS_MAX_CELLS) return greedyPairs(x, y);
   const w = y.length + 1;
   const dp = new Int32Array((x.length + 1) * w);
   for (let i = 1; i <= x.length; i++) {
@@ -149,11 +149,12 @@ export function lcsMatchedMask(a: readonly string[], b: readonly string[]): bool
           : Math.max(dp[(i - 1) * w + j]!, dp[i * w + j - 1]!);
     }
   }
+  const pairs: Array<[number, number]> = [];
   let i = x.length;
   let j = y.length;
   while (i > 0 && j > 0) {
     if (x[i - 1] === y[j - 1]) {
-      matched[i - 1] = true;
+      pairs.push([i - 1, j - 1]);
       i--;
       j--;
     } else if (dp[(i - 1) * w + j]! >= dp[i * w + j - 1]!) {
@@ -162,6 +163,13 @@ export function lcsMatchedMask(a: readonly string[], b: readonly string[]): bool
       j--;
     }
   }
+  return pairs.reverse();
+}
+
+/** Which tokens of `a` take part in one longest common subsequence with `b`. */
+export function lcsMatchedMask(a: readonly string[], b: readonly string[]): boolean[] {
+  const matched = new Array<boolean>(a.length).fill(false);
+  for (const [i] of lcsAlignment(a, b)) matched[i] = true;
   return matched;
 }
 

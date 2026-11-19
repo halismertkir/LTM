@@ -33,6 +33,7 @@ export interface MergedUtterance {
   segmentIds: string[];
   /** Devices that heard it; index 0 supplied the text. */
   deviceIds: string[];
+  /** `sources[i]` is the source through which `deviceIds[i]` heard it (same length). */
   sources: AudioSource[];
 }
 

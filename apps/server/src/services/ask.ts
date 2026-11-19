@@ -13,8 +13,18 @@ const LABEL: Record<SearchHit["type"], string> = {
   utterance: "transcript excerpt",
 };
 
-/** A transcript hit is more useful with the lines around it. */
+/**
+ * Search snippets are cut for display. The model gets more: the whole summary for a
+ * conversation hit, and the surrounding lines for a transcript hit.
+ */
 async function expand(ctx: Ctx, userId: string, hit: SearchHit): Promise<string> {
+  if (hit.type === "conversation") {
+    const rows = await ctx.db.query<{ summary: string | null }>(
+      "SELECT summary FROM conversations WHERE id = $1 AND user_id = $2",
+      [hit.id, userId],
+    );
+    return rows[0]?.summary?.slice(0, 3000) || hit.snippet;
+  }
   if (hit.type !== "utterance" || !hit.conversationId) return hit.snippet;
   const rows = await ctx.db.query<{ text: string; speaker: string }>(
     `WITH target AS (SELECT start_ms FROM utterances WHERE id = $1 AND user_id = $2)

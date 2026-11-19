@@ -96,16 +96,11 @@ export async function remergeConversation(
   const merged = mergeSegments(segs.map((s) => toRaw(s, priorities)));
   const ids = assignIds(merged, old);
   const deviceIds = new Set<string>();
-  const segById = new Map(segs.map((s) => [s.id, s]));
   for (let i = 0; i < merged.length; i++) {
     const u = merged[i]!;
     for (const d of u.deviceIds) deviceIds.add(d);
-    // Clients read sources[i] as the source of deviceIds[i] (winner first), so align them:
-    // one source per device, from that device's first contributing segment.
-    const sources = u.deviceIds.map((d) => {
-      const segId = u.segmentIds.find((id) => segById.get(id)?.device_id === d);
-      return (segId ? segById.get(segId)?.source : undefined) ?? u.sources[0] ?? "mic";
-    });
+    // Clients read sources[i] as the source of deviceIds[i]; mergeSegments keeps them aligned.
+    const sources = u.sources;
     await q.query(
       `INSERT INTO utterances (id, conversation_id, user_id, start_ms, end_ms, text, speaker, language, origin, device_ids, sources, segment_ids, search_text)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12::jsonb, $13)`,

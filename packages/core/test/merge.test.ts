@@ -114,7 +114,10 @@ describe("mergeSegments", () => {
     const tab = seg("tab", 0, 2, "okay so the plan");
     const mic = seg("phone", 0.1, 5, "okay so the plan is that we ship on friday");
     const out = mergeSegments([tab, mic]);
-    expect(out.map((u) => u.text)).toContain("okay so the plan is that we ship on friday");
+    // Only the part the winner did not hear survives, so nothing is duplicated.
+    expect(texts(out)).toEqual(["okay so the plan", "is that we ship on friday"]);
+    expect(out[1]!.segmentIds).toEqual([mic.id]);
+    expect(out[1]!.startMs).toBeGreaterThanOrEqual(out[0]!.startMs);
     expect(allIds(out)).toEqual([mic.id, tab.id].sort());
   });
 
@@ -141,8 +144,7 @@ describe("mergeSegments", () => {
     const tab = seg("tab", 0, 2.5, "hello how are you");
     const mic = seg("phone", 0, 6, "hello how are you I wanted to ask about the invoice");
     const out = mergeSegments([tab, mic]);
-    const joined = out.map((u) => u.text).join(" | ");
-    expect(joined).toContain("I wanted to ask about the invoice");
+    expect(texts(out)).toEqual(["hello how are you", "I wanted to ask about the invoice"]);
     expect(allIds(out)).toEqual([mic.id, tab.id].sort());
   });
 
@@ -366,5 +368,225 @@ describe("mergeSegments", () => {
     expect(speakers({ ...seg("tab", 0, 1, "hi there you"), source: "system" })).toBe("other");
     expect(speakers(seg("watch", 0, 1, "hi there you"))).toBe("unknown");
     expect(speakers(seg("mic", 0, 1, "hi there you", { speaker: "self" }))).toBe("self");
+  });
+});
+
+describe("mergeSegments with staggered cut points", () => {
+  // Six sentences of six words, two seconds each, starting at T0 + 100 s.
+  const S = [
+    "good morning everyone thanks for joining",
+    "today we review the quarterly budget",
+    "marketing spent less than we planned",
+    "engineering needs two more servers soon",
+    "the vendor contract renews in march",
+    "let us decide on hiring next week",
+  ];
+  const at = (i: number) => 100 + i * 2;
+
+  /** One segment of `stream` covering the given sentence indices. */
+  function cut(
+    stream: keyof typeof STREAMS,
+    idxs: number[],
+    opts: { skew?: number; edit?: (text: string) => string; extra?: Partial<RawSegment> } = {},
+  ): RawSegment {
+    const text = idxs.map((i) => S[i]!).join(" ");
+    const skew = opts.skew ?? 0;
+    return seg(
+      stream,
+      at(idxs[0]!) + skew,
+      at(idxs.at(-1)! + 1) + skew,
+      opts.edit ? opts.edit(text) : text,
+      opts.extra,
+    );
+  }
+
+  function occurrences(out: MergedUtterance[], phrase: string): number {
+    const all = out.map((u) => u.text).join(" | ");
+    return all.split(phrase).length - 1;
+  }
+
+  function expectEachOnce(out: MergedUtterance[], sentences = S) {
+    for (const sentence of sentences) expect(occurrences(out, sentence), sentence).toBe(1);
+  }
+
+  it("links a loser segment that straddles two winner segments (the reported case)", () => {
+    const w1 = seg("tab", 0, 4, "hello everyone thanks for joining this is the budget review");
+    const w2 = seg("tab", 4, 7.5, "so we agreed that the q3 budget is fifty thousand euros");
+    const l = seg("watch", 2.6, 5.4, "this is the budget review we agreed the q3");
+    const out = mergeSegments([w1, w2, l]);
+    expect(texts(out)).toEqual([`${w1.text} ${w2.text}`]);
+    expect(out[0]!.segmentIds).toEqual([w1.id, w2.id, l.id]);
+    expect(out[0]!.deviceIds).toEqual(["laptop", "watch"]);
+  });
+
+  it("links a winner segment that straddles two loser segments (mirror case)", () => {
+    const a1 = seg("watch", 0, 4, "hello everyone thanks for joining this is the budget review");
+    const a2 = seg("watch", 4, 7.5, "we agreed the q3 budget is fifty thousand euros");
+    const t0 = seg("tab", 0, 2, "hello everyone thanks for joining");
+    const t1 = seg("tab", 2, 5, "this is the budget review we agreed the q3");
+    const t2 = seg("tab", 5, 7.5, "budget is fifty thousand euros");
+    const out = mergeSegments([a1, a2, t0, t1, t2]);
+    expect(texts(out)).toEqual([`${t0.text} ${t1.text} ${t2.text}`]);
+    expect(out[0]!.segmentIds).toEqual([t0.id, t1.id, t2.id, a1.id, a2.id]);
+  });
+
+  it("chains staggered cuts on both sides into one copy of every sentence", () => {
+    const a = [cut("tab", [0, 1]), cut("tab", [2, 3]), cut("tab", [4, 5])];
+    const b = [cut("phone", [0]), cut("phone", [1, 2]), cut("phone", [3, 4]), cut("phone", [5])];
+    const out = mergeSegments([...a, ...b]);
+    expectEachOnce(out);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.segmentIds.slice(0, 3)).toEqual(a.map((x) => x.id));
+    expect(allIds(out)).toEqual([...a, ...b].map((x) => x.id).sort());
+
+    // The same with the other stream winning.
+    const flipped = mergeSegments([...a, ...b.map((x) => ({ ...x, devicePriority: 99 }))]);
+    expectEachOnce(flipped);
+    expect(flipped[0]!.deviceIds[0]).toBe("phone");
+  });
+
+  it("handles staggered cuts with ±2 s clock skew and recognition differences", () => {
+    const edit = (t: string) =>
+      t
+        .replace("quarterly", "quarterlies")
+        .replace("servers", "server")
+        .replace("march", "marsh")
+        .replace("let us", "lets");
+    for (const skew of [-2, 2]) {
+      const a = [cut("tab", [0, 1]), cut("tab", [2, 3]), cut("tab", [4, 5])];
+      const b = [
+        cut("phone", [0], { skew, edit }),
+        cut("phone", [1, 2], { skew, edit }),
+        cut("phone", [3, 4], { skew, edit }),
+        cut("phone", [5], { skew, edit }),
+      ];
+      const out = mergeSegments([...b, ...a]);
+      expectEachOnce(out);
+      expect(occurrences(out, "marsh"), `skew ${skew}`).toBe(0);
+      expect(occurrences(out, "quarterlies")).toBe(0);
+      expect(allIds(out)).toEqual([...a, ...b].map((x) => x.id).sort());
+    }
+  });
+
+  it("merges three devices with staggered cuts", () => {
+    const segs = [
+      cut("tab", [0, 1, 2]),
+      cut("tab", [3, 4, 5]),
+      cut("phone", [0]),
+      cut("phone", [1, 2]),
+      cut("phone", [3, 4]),
+      cut("phone", [5]),
+      cut("watch", [0, 1], { skew: -1.5 }),
+      cut("watch", [2, 3, 4], { skew: -1.5 }),
+      cut("watch", [5], { skew: -1.5 }),
+    ];
+    const out = mergeSegments(segs);
+    expectEachOnce(out);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.deviceIds).toEqual(["laptop", "phone", "watch"]);
+    expect(allIds(out)).toEqual(segs.map((x) => x.id).sort());
+    for (let k = 1; k <= 5; k++) expect(mergeSegments(shuffled(segs, k))).toEqual(out);
+  });
+
+  it("keeps an extra sentence the losers heard in the middle exactly once", () => {
+    const extra = "sorry my dog is barking again";
+    // The tab stream did not hear the room: sentence 2 is missing there.
+    const tab = [
+      seg("tab", at(0), at(2), `${S[0]} ${S[1]}`),
+      seg("tab", at(3), at(5), `${S[3]} ${S[4]}`),
+    ];
+    const phone = [
+      cut("phone", [0]),
+      seg("phone", at(1), at(4), `${S[1]} ${extra} ${S[3]}`),
+      cut("phone", [4]),
+    ];
+    const out = mergeSegments([...tab, ...phone]);
+    expectEachOnce(out, [S[0]!, S[1]!, S[3]!, S[4]!, extra]);
+    expect(texts(out)).toEqual([`${S[0]} ${S[1]}`, extra, `${S[3]} ${S[4]}`]);
+    expect(out[1]!.deviceIds).toEqual(["phone"]);
+    expect(out[1]!.startMs).toBeGreaterThanOrEqual(T0 + at(2) * 1000 - 100);
+    expect(out[1]!.endMs).toBeLessThanOrEqual(T0 + at(3) * 1000 + 100);
+    expect(allIds(out)).toEqual([...tab, ...phone].map((x) => x.id).sort());
+
+    // A second losing device that also heard it, cut differently: still once.
+    const watch = [
+      cut("watch", [0]),
+      seg("watch", at(1), at(3), `${S[1]} ${extra}`),
+      cut("watch", [3, 4]),
+    ];
+    const three = mergeSegments([...tab, ...phone, ...watch]);
+    expectEachOnce(three, [S[0]!, S[1]!, S[3]!, S[4]!, extra]);
+    const extraUtterance = three.find((u) => u.text === extra)!;
+    expect(extraUtterance.deviceIds).toEqual(["phone", "watch"]);
+    expect(allIds(three)).toEqual([...tab, ...phone, ...watch].map((x) => x.id).sort());
+  });
+
+  it("still keeps repeated staggered speech minutes apart separate", () => {
+    const first = [cut("tab", [0, 1]), cut("phone", [0]), cut("phone", [1])];
+    const later = [first[0]!, first[1]!, first[2]!].map((x, i) => ({
+      ...x,
+      id: `later-${i}`,
+      startMs: x.startMs + 300_000,
+      endMs: x.endMs + 300_000,
+    }));
+    const out = mergeSegments([...first, ...later]);
+    expect(out).toHaveLength(2);
+    for (const sentence of [S[0]!, S[1]!]) expect(occurrences(out, sentence)).toBe(2);
+  });
+});
+
+describe("mergeSegments corroboration across a pause", () => {
+  it("lists a device on every utterance it heard, while each raw segment is owned once", () => {
+    const t0 = 1_000_000;
+    const seg = (
+      id: string,
+      streamId: string,
+      deviceId: string,
+      source: "tab" | "ambient",
+      startS: number,
+      endS: number,
+      text: string,
+    ) => ({
+      id,
+      streamId,
+      deviceId,
+      source,
+      origin: "server_stt" as const,
+      startMs: t0 + startS * 1000,
+      endMs: t0 + endS * 1000,
+      text,
+    });
+    const out = mergeSegments([
+      seg(
+        "w1",
+        "tab",
+        "laptop",
+        "tab",
+        1,
+        4,
+        "hello everyone thanks for joining the budget review",
+      ),
+      seg("w2", "tab", "laptop", "tab", 6.5, 9.5, "we agreed the q3 budget is 120 thousand euros"),
+      // One segment of the watch spans the pause between the two tab segments.
+      seg(
+        "a1",
+        "amb",
+        "watch",
+        "ambient",
+        2.8,
+        11.1,
+        "hello everyone thanks for joining the budget review we agreed the q3 budget is 120 thousand euros",
+      ),
+    ]);
+    expect(out.map((u) => u.text)).toEqual([
+      "hello everyone thanks for joining the budget review",
+      "we agreed the q3 budget is 120 thousand euros",
+    ]);
+    for (const u of out) {
+      expect(u.deviceIds).toEqual(["laptop", "watch"]);
+      expect(u.sources).toEqual(["tab", "ambient"]);
+    }
+    const ids = out.flatMap((u) => u.segmentIds);
+    expect([...ids].sort()).toEqual(["a1", "w1", "w2"]);
   });
 });
