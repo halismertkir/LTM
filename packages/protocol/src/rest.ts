@@ -625,7 +625,7 @@ export const zProviderCatalogEntry = z.object({
   thirdParty: z.boolean(),
   needsApiKey: z.boolean(),
   needsBaseUrl: z.boolean(),
-  defaultModels: z.record(zProviderRole, z.string()).optional(),
+  defaultModels: z.partialRecord(zProviderRole, z.string()).optional(),
 });
 export const zProviderCatalog = z.object({
   entries: z.array(zProviderCatalogEntry),

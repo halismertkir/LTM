@@ -1,0 +1,22 @@
+{
+  "name": "@ltm/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pure, dependency-free pipeline logic: multi-device transcript merge, conversation splitting, VAD and PCM utilities.",
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ltm/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "vitest": "^5.1.1"
+  }
+}
