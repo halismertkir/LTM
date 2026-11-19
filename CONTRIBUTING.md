@@ -68,6 +68,8 @@ stores it; configure providers in **Settings → AI providers**, or see
 | Lint / format | `pnpm lint` / `pnpm format` |
 | Build everything | `pnpm build` |
 | Scan for secrets | `pnpm check:secrets` |
+| End-to-end: extension ↔ server in Chromium | `node scripts/e2e/extension.mjs` (after `pnpm build`; needs Playwright) |
+| End-to-end: multi-device pipeline with a real model | `ANTHROPIC_API_KEY=… node scripts/e2e/pipeline.mjs` (after `pnpm build`; spends a few cents) |
 | Work on one package | `pnpm --filter @ltm/server test` (or `@ltm/web`, `@ltm/extension`, `@ltm/core`, `@ltm/providers`, `@ltm/protocol`) |
 
 Where things live is described in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Each

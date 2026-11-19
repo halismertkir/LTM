@@ -81,21 +81,27 @@ recognise it slightly differently, and report it with clocks that disagree by up
 couple of seconds. `mergeSegments()` in `packages/core` turns the pile of raw segments
 into one transcript:
 
-1. Sort by start time. Two segments from **different streams** are *linked* when their
-   time ranges overlap (after widening by `clockToleranceMs`) **and** the shorter text is
-   largely contained, in order, in the longer one (token-level LCS ratio ≥
-   `similarityThreshold`). Containment rather than plain similarity is what handles
-   different cut points: stream A's "hello how are you I'm fine" links to both of stream
-   B's "hello how are you" and "I'm fine".
-2. Linked segments form clusters (union-find). Within a cluster each stream's segments are
-   concatenated in time order, and one stream **wins**: highest device priority (device
-   override, else `SOURCE_PRIORITY`: tab > system > mic > ambient), then higher mean
-   confidence, then more tokens. The winner's text becomes the utterance; the others are
-   recorded as corroborating devices.
-3. Segments that were linked to nothing pass through unchanged — content only one device
-   heard is never dropped.
-4. Consecutive utterances from the same winning stream separated by less than `joinGapMs`
-   are joined.
+1. **Link.** A segment is compared not with single segments of another stream but with
+   that stream's *local text*: everything it said during the segment's time range
+   (widened by `clockToleranceMs`), concatenated. If enough of the segment's tokens appear
+   there in order (token-level LCS share ≥ `similarityThreshold`), the segment is linked
+   to the segments that hold the matches. This is what makes different cut points work:
+   stream A's "…the budget review we agreed the budget…" links to both of stream B's
+   "…the budget review" and "we agreed the budget…", although it matches neither alone.
+   Very short segments ("yes", "evet") only link on strong real-time overlap and never
+   across conflicting speakers.
+2. **Pick a winner.** Linked segments form groups. Within a group one stream wins:
+   highest device priority (device override, else `SOURCE_PRIORITY`: tab > system > mic >
+   ambient), then higher mean confidence, then more tokens. The winner's text becomes the
+   transcript.
+3. **Keep what only the others heard.** A losing segment is folded in only if the winner
+   actually covered it. If it contains a run of words the winner never said, that
+   remainder is cut out and goes into another pass, where the remaining devices are
+   merged among themselves — so a sentence that two wearables heard and the laptop did
+   not still appears exactly once. Content heard by a single device is never dropped.
+4. **Shape.** Winner segments separated by less than `joinGapMs` become one utterance;
+   every device that heard an utterance is listed on it (first = source of the text),
+   with `sources[i]` being how `deviceIds[i]` heard it.
 
 Speaker hints are coarse by design: `tab`/`system` audio is "other", `mic`/`ambient` is
 "unknown" unless the client said "self". When a microphone also picks up the call audio
