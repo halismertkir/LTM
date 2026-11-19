@@ -1,0 +1,38 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not paste real transcripts, audio, tokens or other people's personal data.**
+        Security or privacy vulnerabilities must be reported privately — see SECURITY.md.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options: [Server, Web app, Chrome extension, iPhone app, Apple Watch app, Docs / other]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: With synthetic data only.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: OS, browser, device, database (embedded or PostgreSQL), provider kinds in use (not keys).
