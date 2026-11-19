@@ -1,0 +1,4 @@
+/* Info.plist strings (en). Keep keys in sync across languages. */
+
+"CFBundleDisplayName" = "LTM";
+"NSMicrophoneUsageDescription" = "LTM records audio only after you tap Start, to transcribe conversations on your own LTM server.";

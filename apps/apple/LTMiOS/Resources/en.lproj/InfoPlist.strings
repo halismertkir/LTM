@@ -1,0 +1,7 @@
+/* Info.plist strings (en). Keep keys in sync across languages. */
+
+"CFBundleDisplayName" = "LTM";
+"NSCameraUsageDescription" = "The camera is used only to scan the pairing QR code shown in the LTM web app.";
+"NSLocalNetworkUsageDescription" = "LTM connects to your self-hosted LTM server when it runs on your local network.";
+"NSMicrophoneUsageDescription" = "LTM records audio only after you tap Start, to transcribe your conversations on the LTM server you paired with, or on this iPhone in on-device mode.";
+"NSSpeechRecognitionUsageDescription" = "In on-device mode, LTM turns speech into text on this iPhone so that no audio leaves it. Recognition always runs on the device.";

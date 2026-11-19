@@ -1,0 +1,27 @@
+/* LTM Apple Watch app strings (en). Keep keys in sync across languages. */
+
+"watch.dismiss" = "OK";
+"watch.help.consent" = "Accept the consent documents in LTM on your iPhone first.";
+"watch.help.pair" = "Pair the watch from the iPhone: LTM → Settings → Apple Watch.";
+"watch.info.lastSync" = "Synced at %@";
+"watch.info.notPaired" = "Not paired yet";
+"watch.info.paired" = "Paired with your LTM server";
+"watch.info.phoneReachable" = "iPhone reachable";
+"watch.info.phoneUnreachable" = "iPhone not reachable";
+"watch.info.status" = "Status";
+"watch.info.tellPeople" = "Tell people";
+"watch.issue.generic" = "Recording stopped unexpectedly. Try again.";
+"watch.issue.microphone" = "Microphone access is off. Turn it on in the watch's Settings → Privacy & Security.";
+"watch.issue.unauthorized" = "The server no longer accepts this watch. Pair it again from the iPhone.";
+"watch.pause" = "Pause";
+"watch.pending" = "%ld to upload";
+"watch.resume" = "Resume";
+"watch.start" = "Start";
+"watch.state.consent" = "Consent needed";
+"watch.state.error" = "Needs attention";
+"watch.state.idle" = "Not listening";
+"watch.state.listening" = "Listening";
+"watch.state.notPaired" = "Not paired";
+"watch.state.paused" = "Paused";
+"watch.state.pausedServer" = "Paused for account";
+"watch.stop" = "Stop";

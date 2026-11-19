@@ -1,0 +1,7 @@
+/* Info.plist strings (tr). Keep keys in sync across languages. */
+
+"CFBundleDisplayName" = "LTM";
+"NSCameraUsageDescription" = "Kamera yalnızca LTM web uygulamasında gösterilen eşleştirme QR kodunu taramak için kullanılır.";
+"NSLocalNetworkUsageDescription" = "LTM, yerel ağınızda çalışan kendi LTM sunucunuza bağlanır.";
+"NSMicrophoneUsageDescription" = "LTM, konuşmalarınızı eşleştirdiğiniz LTM sunucusunda ya da cihaz üzerinde modunda bu iPhone'da yazıya dökmek için yalnızca siz Başlat'a dokunduktan sonra ses kaydeder.";
+"NSSpeechRecognitionUsageDescription" = "Cihaz üzerinde modunda LTM, hiçbir ses cihazdan çıkmasın diye konuşmayı bu iPhone'da metne dönüştürür. Tanıma her zaman cihaz üzerinde çalışır.";

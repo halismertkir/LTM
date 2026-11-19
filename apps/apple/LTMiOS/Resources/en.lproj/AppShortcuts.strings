@@ -1,0 +1,5 @@
+/* App Shortcut phrases (en). Keep keys in sync across languages. */
+
+"Pause ${applicationName}" = "Pause ${applicationName}";
+"Start listening with ${applicationName}" = "Start listening with ${applicationName}";
+"Stop ${applicationName}" = "Stop ${applicationName}";

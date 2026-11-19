@@ -1,0 +1,5 @@
+/* App Shortcut phrases (tr). Keep keys in sync across languages. */
+
+"Pause ${applicationName}" = "${applicationName} uygulamasını duraklat";
+"Start listening with ${applicationName}" = "${applicationName} ile dinlemeye başla";
+"Stop ${applicationName}" = "${applicationName} uygulamasını durdur";

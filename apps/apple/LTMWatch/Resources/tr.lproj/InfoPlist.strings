@@ -1,0 +1,4 @@
+/* Info.plist strings (tr). Keep keys in sync across languages. */
+
+"CFBundleDisplayName" = "LTM";
+"NSMicrophoneUsageDescription" = "LTM, konuşmaları kendi LTM sunucunuzda yazıya dökmek için yalnızca siz Başlat'a dokunduktan sonra ses kaydeder.";

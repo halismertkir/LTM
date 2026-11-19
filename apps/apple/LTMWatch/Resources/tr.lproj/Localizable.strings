@@ -1,0 +1,27 @@
+/* LTM Apple Watch app strings (tr). Keep keys in sync across languages. */
+
+"watch.dismiss" = "Tamam";
+"watch.help.consent" = "Önce iPhone'daki LTM'de onay belgelerini kabul edin.";
+"watch.help.pair" = "Saati iPhone'dan eşleştirin: LTM → Ayarlar → Apple Watch.";
+"watch.info.lastSync" = "Eşitleme: %@";
+"watch.info.notPaired" = "Henüz eşleştirilmedi";
+"watch.info.paired" = "LTM sunucunuzla eşleştirildi";
+"watch.info.phoneReachable" = "iPhone'a ulaşılabiliyor";
+"watch.info.phoneUnreachable" = "iPhone'a ulaşılamıyor";
+"watch.info.status" = "Durum";
+"watch.info.tellPeople" = "Bilgilendirin";
+"watch.issue.generic" = "Kayıt beklenmedik şekilde durdu. Tekrar deneyin.";
+"watch.issue.microphone" = "Mikrofon erişimi kapalı. Saatin Ayarlar → Gizlilik ve Güvenlik bölümünden açın.";
+"watch.issue.unauthorized" = "Sunucu bu saati artık kabul etmiyor. iPhone'dan yeniden eşleştirin.";
+"watch.pause" = "Duraklat";
+"watch.pending" = "%ld yüklenecek";
+"watch.resume" = "Devam";
+"watch.start" = "Başlat";
+"watch.state.consent" = "Onay gerekli";
+"watch.state.error" = "Dikkat gerekiyor";
+"watch.state.idle" = "Dinlemiyor";
+"watch.state.listening" = "Dinliyor";
+"watch.state.notPaired" = "Eşleştirilmedi";
+"watch.state.paused" = "Duraklatıldı";
+"watch.state.pausedServer" = "Hesap için duraklatıldı";
+"watch.stop" = "Durdur";
