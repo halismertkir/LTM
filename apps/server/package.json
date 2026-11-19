@@ -1,0 +1,45 @@
+{
+  "name": "@ltm/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "LTM server: ingest, multi-device merge pipeline, REST/WebSocket API.",
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "node scripts/build.mjs",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.11.0",
+    "@electric-sql/pglite": "^0.5.17",
+    "@electric-sql/pglite-pgvector": "^0.0.18",
+    "@fastify/cookie": "^11.1.5",
+    "@fastify/multipart": "^10.1.9",
+    "@fastify/static": "^10.1.12",
+    "@fastify/websocket": "^11.3.7",
+    "@ltm/core": "workspace:*",
+    "@ltm/protocol": "workspace:*",
+    "@ltm/providers": "workspace:*",
+    "fastify": "^5.12.8",
+    "pg": "^8.23.1",
+    "pino": "^10.4.0",
+    "ws": "^8.23.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.23.1",
+    "@types/ws": "^8.18.2",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1"
+  }
+}
