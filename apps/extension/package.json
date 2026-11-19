@@ -1,0 +1,30 @@
+{
+  "name": "@ltm/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "LTM Chrome (MV3) capture client: tab audio and microphone streamed to your LTM server.",
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "scripts": {
+    "dev": "vite build --watch --mode development",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.sw.json && tsc --noEmit -p tsconfig.worklet.json && tsc --noEmit -p tsconfig.node.json",
+    "test": "vitest run",
+    "test:browser": "node scripts/browser-check.mjs",
+    "icons": "node scripts/icons.mjs",
+    "zip": "node scripts/zip.mjs"
+  },
+  "dependencies": {
+    "@ltm/protocol": "workspace:*",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.3.7",
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1",
+    "ws": "^8.18.3"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["chrome", "vite/client"]
+  },
+  "include": ["src"],
+  "exclude": ["src/background", "src/audio/worklet.ts", "src/audio/worklet-env.d.ts"]
+}

@@ -1,0 +1,18 @@
+{
+  "extName": {
+    "message": "LTM — toplantı ve masa başı kaydı",
+    "description": "Chrome Web Mağazası'nda ve chrome://extensions sayfasında görünen eklenti adı."
+  },
+  "extDescription": {
+    "message": "Tarayıcı toplantılarını ve mikrofonunuzu döküm, not ve uzun süreli bellek için kendi LTM sunucunuza kaydeder.",
+    "description": "Kısa açıklama (en fazla 132 karakter)."
+  },
+  "actionTitle": {
+    "message": "LTM",
+    "description": "Eklenti kendi ipucunu ayarlamadan önceki araç çubuğu düğmesi ipucu."
+  },
+  "commandToggleTab": {
+    "message": "Geçerli sekmenin kaydını başlat veya durdur",
+    "description": "chrome://extensions/shortcuts sayfasındaki klavye kısayolu açıklaması."
+  }
+}

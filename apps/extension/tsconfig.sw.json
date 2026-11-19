@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "WebWorker"],
+    "types": ["chrome"]
+  },
+  "include": ["src/background", "src/shared"],
+  "exclude": ["src/shared/dom.ts"]
+}

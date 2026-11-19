@@ -1,0 +1,18 @@
+{
+  "extName": {
+    "message": "LTM — meeting & desk capture",
+    "description": "Extension name shown in the Chrome Web Store and chrome://extensions."
+  },
+  "extDescription": {
+    "message": "Records browser meetings and your microphone to your own LTM server for transcripts, notes and long-term memory.",
+    "description": "Short description (max 132 characters)."
+  },
+  "actionTitle": {
+    "message": "LTM",
+    "description": "Toolbar button tooltip before the extension sets its own."
+  },
+  "commandToggleTab": {
+    "message": "Start or stop recording the current tab",
+    "description": "Keyboard shortcut description in chrome://extensions/shortcuts."
+  }
+}
