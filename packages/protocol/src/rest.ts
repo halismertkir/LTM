@@ -32,7 +32,7 @@ export const ROUTES = {
   authRegister: "/auth/register", // POST RegisterRequest → AuthResponse (public, only if registration is open)
   authLogin: "/auth/login", // POST LoginRequest → AuthResponse (public)
   authLogout: "/auth/logout", // POST → 204
-  me: "/me", // GET → Me
+  me: "/me", // GET → Me, PATCH MeUpdate → Me (user session)
 
   // --- devices
   devices: "/devices", // GET → Device[]
@@ -53,10 +53,10 @@ export const ROUTES = {
 
   // --- memory
   conversations: "/conversations", // GET ?from&to&q&limit&cursor → Page<ConversationSummary>
-  conversation: "/conversations/:id", // GET → ConversationDetail, PATCH ConversationUpdate, DELETE → 204
+  conversation: "/conversations/:id", // GET → ConversationDetail, PATCH ConversationUpdate → ConversationDetail, DELETE → 204
   conversationReprocess: "/conversations/:id/reprocess", // POST → 202
   actionItem: "/conversations/:id/action-items/:itemId", // PATCH ActionItemUpdate → ActionItem
-  memories: "/memories", // GET ?q&kind&limit&cursor → Page<Memory>, POST MemoryCreate → Memory
+  memories: "/memories", // GET ?q&kind&conversationId&limit&cursor → Page<Memory>, POST MemoryCreate → Memory
   memory: "/memories/:id", // PATCH MemoryUpdate → Memory, DELETE → 204
   search: "/search", // POST SearchRequest → SearchResponse
   ask: "/ask", // POST AskRequest → AskResponse
@@ -264,6 +264,12 @@ export const zMe = z.object({
 });
 export type Me = z.infer<typeof zMe>;
 
+export const zMeUpdate = z.object({
+  displayName: z.string().min(1).max(80).optional(),
+  locale: zLocale.optional(),
+});
+export type MeUpdate = z.infer<typeof zMeUpdate>;
+
 // ---------------------------------------------------------------------------
 // Ingest over HTTP (store-and-forward: watch, phone in background, offline catch-up)
 // ---------------------------------------------------------------------------
@@ -467,6 +473,8 @@ export type Memory = z.infer<typeof zMemory>;
 export const zMemoryQuery = zPageQuery.extend({
   q: z.string().max(200).optional(),
   kind: zMemoryKind.optional(),
+  /** Only memories extracted from this conversation. */
+  conversationId: zId.optional(),
 });
 
 export const zMemoryCreate = z.object({

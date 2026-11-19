@@ -1,0 +1,40 @@
+{
+  "name": "@ltm/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "LTM dashboard: onboarding, consent, timeline, conversations, memories, search/ask, devices and settings.",
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "e2e": "vite build && node e2e/smoke.mjs"
+  },
+  "dependencies": {
+    "@ltm/protocol": "workspace:*",
+    "@tanstack/react-query": "^5.108.1",
+    "dompurify": "^3.4.18",
+    "marked": "^18.2.1",
+    "qrcode": "^1.5.4",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router": "^8.5.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.13",
+    "@types/node": "^22.0.0",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "jsdom": "^31.0.1",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
+  }
+}
