@@ -1,0 +1,18 @@
+{
+  "name": "@ltm/protocol",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Wire protocol, REST DTOs and consent documents shared by every LTM app.",
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "exports": {
+    ".": "./src/index.ts",
+    "./consent.json": "./consent/consent.v1.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": { "zod": "^4.6.7" },
+  "devDependencies": { "@types/node": "^22.0.0", "vitest": "^5.1.1" }
+}

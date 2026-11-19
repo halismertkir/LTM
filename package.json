@@ -1,0 +1,22 @@
+{
+  "name": "ltm",
+  "private": true,
+  "version": "0.1.0",
+  "description": "LTM — self-hosted long-term memory from your conversations, across devices.",
+  "license": "SEE LICENSE IN LICENSE",
+  "packageManager": "pnpm@10.28.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @ltm/server --filter @ltm/web dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "check:secrets": "node scripts/check-secrets.mjs"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.0",
+    "typescript": "^7.0.2"
+  }
+}

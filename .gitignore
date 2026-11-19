@@ -1,0 +1,42 @@
+# dependencies / builds
+node_modules/
+dist/
+build/
+.vite/
+*.tsbuildinfo
+coverage/
+
+# secrets & local config — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# runtime data (recordings, transcripts, embedded database)
+data/
+.ltm/
+*.sqlite
+*.db
+*.wav
+*.m4a
+*.webm
+!apps/**/fixtures/**
+
+# Apple / Xcode
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+.build/
+.swiftpm/
+*.ipa
+*.dSYM/
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.log

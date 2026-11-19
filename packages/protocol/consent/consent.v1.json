@@ -1,0 +1,59 @@
+{
+  "$comment": "Canonical consent documents and notice templates shown by every LTM client. Bump `version` of a document whenever its meaning changes: clients must then ask again. These texts are templates, not legal advice — see docs/legal/CONSENT.md.",
+  "documents": [
+    {
+      "type": "recording_responsibility",
+      "version": "2026-11-19",
+      "requiredWhen": "always",
+      "en": {
+        "title": "Recording other people: your responsibility",
+        "body": "LTM listens through your devices and turns what it hears into text and notes. That usually includes the voices of other people.\n\n**In many places it is illegal to record a conversation without the knowledge or consent of everyone in it.** The rules differ by country and state, and they can differ for phone calls, video meetings and face-to-face talk. Some laws apply even when you are part of the conversation yourself.\n\nBy continuing you confirm that:\n\n1. **You will tell people** that you are recording and transcribing before you capture them, and you will obtain their consent wherever the law requires it.\n2. **You will stop or pause capture** when someone objects, and in places where people expect privacy (medical or legal appointments, restrooms, other people's homes, confidential work meetings) unless everyone present has clearly agreed.\n3. **You will not use LTM to secretly monitor anyone** — including partners, family members, employees, colleagues or children.\n4. **You will follow the rules of your workplace, school and meeting platform**, including confidentiality duties you owe to others.\n5. **You alone are responsible** for how you use LTM. The authors of the software cannot see your recordings and accept no liability for unlawful use.\n\nLTM helps you do this properly: every client shows a visible indicator while it is capturing, offers a one-tap pause, and provides ready-made notice texts you can read aloud or paste into a meeting chat."
+      },
+      "tr": {
+        "title": "Başkalarını kaydetmek: sorumluluk sizde",
+        "body": "LTM, cihazlarınız aracılığıyla ortamı dinler ve duyduklarını metne ve notlara dönüştürür. Bu çoğu zaman başka insanların seslerini de kapsar.\n\n**Birçok ülkede, bir konuşmayı içindeki herkesin bilgisi veya rızası olmadan kaydetmek suçtur.** Kurallar ülkeye göre değişir; telefon görüşmesi, görüntülü toplantı ve yüz yüze konuşma için farklı olabilir. Bazı yasalar, konuşmanın tarafı olsanız bile geçerlidir. Türkiye'de Türk Ceza Kanunu'nun özel hayata ve hayatın gizli alanına karşı suçlara ilişkin hükümleri (md. 132–136) ile 6698 sayılı Kişisel Verilerin Korunması Kanunu (KVKK) bu kapsamdadır.\n\nDevam ederek şunları onaylıyorsunuz:\n\n1. **İnsanlara haber vereceksiniz:** Kayıt ve yazıya dökme yaptığınızı, onları kaydetmeden önce bildirecek ve yasanın gerektirdiği her durumda rızalarını alacaksınız.\n2. **Kaydı durduracak veya duraklatacaksınız:** Biri itiraz ettiğinde ve insanların mahremiyet beklediği yerlerde (sağlık veya hukuk görüşmeleri, tuvaletler, başkalarının evleri, gizli iş toplantıları) orada bulunan herkes açıkça kabul etmedikçe kayıt yapmayacaksınız.\n3. **LTM'yi kimseyi gizlice izlemek için kullanmayacaksınız** — eş, aile üyesi, çalışan, iş arkadaşı veya çocuklar dahil.\n4. **İş yerinizin, okulunuzun ve toplantı platformunuzun kurallarına** ve başkalarına karşı üstlendiğiniz gizlilik yükümlülüklerine uyacaksınız.\n5. **LTM'yi nasıl kullandığınızdan yalnızca siz sorumlusunuz.** Yazılımın geliştiricileri kayıtlarınızı göremez ve hukuka aykırı kullanımdan sorumlu tutulamaz.\n\nLTM bunu doğru yapmanıza yardımcı olur: her istemci kayıt sırasında görünür bir gösterge sunar, tek dokunuşla duraklatma imkânı verir ve yüksek sesle okuyabileceğiniz ya da toplantı sohbetine yapıştırabileceğiniz hazır bilgilendirme metinleri içerir."
+      }
+    },
+    {
+      "type": "data_processing",
+      "version": "2026-11-19",
+      "requiredWhen": "always",
+      "en": {
+        "title": "How your data is processed",
+        "body": "To build your long-term memory, LTM processes:\n\n- **Audio** captured by the devices you pair (browser tab audio, microphones, watch).\n- **Transcripts** of that audio, with timestamps and the device that heard it.\n- **Derived content**: conversation summaries, notes, action items and memories written by a language model.\n- **Technical metadata**: device names, app versions, connection times.\n\nVoice recordings and conversations can reveal sensitive information about you and others (health, beliefs, relationships, finances). Treat your LTM server like a diary that also contains other people's words.\n\n**Where it is processed.** Everything is sent to and stored on the LTM server you connected to. If you self-host, that is your own machine. Audio can be transcribed on the device instead (\"on-device transcription\"); in that mode audio never leaves the device and only text is uploaded.\n\n**Retention.** By default raw audio is deleted as soon as it has been transcribed. Transcripts, notes and memories are kept until you delete them or until the retention period you configure expires.\n\n**Your controls.** You can pause capture at any time, export everything the server holds about you, delete individual conversations and memories, erase all captured data, or delete your account. You can withdraw this consent at any time in Settings; capture then stops.\n\nBy continuing you explicitly consent to this processing of your own data."
+      },
+      "tr": {
+        "title": "Verileriniz nasıl işlenir",
+        "body": "LTM, uzun süreli belleğinizi oluşturmak için şunları işler:\n\n- Eşleştirdiğiniz cihazların yakaladığı **ses** (tarayıcı sekmesi sesi, mikrofonlar, saat).\n- Bu sesin zaman damgalı ve hangi cihazın duyduğu bilgisini içeren **yazıya dökümü**.\n- **Türetilmiş içerik**: bir dil modelinin yazdığı görüşme özetleri, notlar, yapılacaklar ve anılar.\n- **Teknik üst veriler**: cihaz adları, uygulama sürümleri, bağlantı zamanları.\n\nSes kayıtları ve konuşmalar, sizinle ve başkalarıyla ilgili hassas bilgileri (sağlık, inanç, ilişkiler, mali durum) açığa çıkarabilir; KVKK ve GDPR kapsamında özel nitelikli kişisel veri içerebilir. LTM sunucunuza, başkalarının sözlerini de içeren bir günlük gibi davranın.\n\n**Nerede işlenir.** Her şey bağlandığınız LTM sunucusuna gönderilir ve orada saklanır. Kendi sunucunuzu barındırıyorsanız bu sizin makinenizdir. Ses, bunun yerine cihazın üzerinde yazıya dökülebilir (\"cihaz üzerinde yazıya dökme\"); bu modda ses cihazdan hiç çıkmaz, yalnızca metin yüklenir.\n\n**Saklama.** Varsayılan olarak ham ses, yazıya dökülür dökülmez silinir. Dökümler, notlar ve anılar siz silene veya ayarladığınız saklama süresi dolana kadar tutulur.\n\n**Kontrol sizde.** Kaydı istediğiniz an duraklatabilir, sunucunun hakkınızda tuttuğu her şeyi dışa aktarabilir, tek tek görüşmeleri ve anıları silebilir, tüm kayıtlı veriyi veya hesabınızı tamamen silebilirsiniz. Bu rızayı Ayarlar'dan dilediğiniz zaman geri alabilirsiniz; kayıt o anda durur.\n\nDevam ederek kendi verilerinizin bu şekilde işlenmesine açık rıza veriyorsunuz."
+      }
+    },
+    {
+      "type": "third_party_ai",
+      "version": "2026-11-19",
+      "requiredWhen": "third_party_provider",
+      "en": {
+        "title": "Sending content to an external AI provider",
+        "body": "You have configured (or your server's operator has configured) an AI provider that runs outside your LTM server — for example the Anthropic or OpenAI API with your own key, or a Claude / ChatGPT subscription through the official command-line tools.\n\nThis means that **audio and/or transcripts of your conversations — including what other people said — are transmitted to that provider** for transcription, note-taking, memory extraction, embedding and question answering. The provider processes them under its own terms and privacy policy, possibly in another country, and LTM cannot control or delete what the provider retains.\n\nBefore you continue:\n\n- Read the provider's data-usage and retention terms for the plan you use.\n- Make sure the people you record have been told that an external AI service is involved, where the law requires it.\n- Do not send content you are obliged to keep confidential.\n\nIf you prefer that nothing leaves your infrastructure, choose a local model (\"OpenAI-compatible\" provider pointing at Ollama, LM Studio, a local Whisper server, …) instead.\n\nBy continuing you consent to this transfer."
+      },
+      "tr": {
+        "title": "İçeriğin harici bir yapay zekâ sağlayıcısına gönderilmesi",
+        "body": "LTM sunucunuzun dışında çalışan bir yapay zekâ sağlayıcısı yapılandırdınız (veya sunucu yöneticiniz yapılandırdı) — örneğin kendi anahtarınızla Anthropic ya da OpenAI API'si veya resmî komut satırı araçları üzerinden Claude / ChatGPT aboneliği.\n\nBu, **görüşmelerinizin sesinin ve/veya dökümlerinin — başkalarının söyledikleri dahil — yazıya dökme, not çıkarma, anı çıkarma, gömme (embedding) ve soru yanıtlama için bu sağlayıcıya iletildiği** anlamına gelir. Sağlayıcı bu verileri kendi koşulları ve gizlilik politikası çerçevesinde, muhtemelen başka bir ülkede işler (KVKK kapsamında yurt dışına veri aktarımı sayılabilir); LTM, sağlayıcının sakladığı veriyi denetleyemez veya silemez.\n\nDevam etmeden önce:\n\n- Kullandığınız plan için sağlayıcının veri kullanım ve saklama koşullarını okuyun.\n- Yasanın gerektirdiği durumlarda, kaydettiğiniz kişilere harici bir yapay zekâ hizmetinin kullanıldığını bildirdiğinizden emin olun.\n- Gizli tutmakla yükümlü olduğunuz içerikleri göndermeyin.\n\nHiçbir şeyin kendi altyapınızdan çıkmamasını istiyorsanız yerel bir model seçin (Ollama, LM Studio, yerel Whisper sunucusu vb. adresini gösteren \"OpenAI uyumlu\" sağlayıcı).\n\nDevam ederek bu aktarıma rıza veriyorsunuz."
+      }
+    }
+  ],
+  "notices": {
+    "$comment": "Ready-made texts for informing other people. Clients offer them for copy/paste or read-aloud.",
+    "spoken": {
+      "en": "Just so you know: I use a personal note-taking tool that records and transcribes my conversations. Are you okay with that? If not, I'll pause it now.",
+      "tr": "Bilginize: Konuşmalarımı kaydeden ve yazıya döken kişisel bir not alma aracı kullanıyorum. Sizin için uygun mu? Değilse hemen duraklatıyorum."
+    },
+    "meetingChat": {
+      "en": "Heads-up: I'm using LTM, a personal note-taking tool, to record and transcribe this meeting for my own notes. If anyone objects, tell me and I'll turn it off.",
+      "tr": "Bilgilendirme: Bu toplantıyı kendi notlarım için LTM adlı kişisel not alma aracıyla kaydediyor ve yazıya döküyorum. İtirazı olan varsa lütfen söylesin, hemen kapatayım."
+    },
+    "thirdPartyAi": {
+      "en": "The transcript is processed by an external AI service to produce notes.",
+      "tr": "Döküm, not çıkarmak için harici bir yapay zekâ hizmeti tarafından işlenmektedir."
+    }
+  }
+}

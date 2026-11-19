@@ -1,0 +1,8 @@
+packages:
+  - "apps/server"
+  - "apps/web"
+  - "apps/extension"
+  - "packages/*"
+onlyBuiltDependencies:
+  - esbuild
+  - "@biomejs/biome"
