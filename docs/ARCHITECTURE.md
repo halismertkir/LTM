@@ -182,6 +182,7 @@ claimed by an in-process worker — no Redis or broker.
 | `DATABASE_URL` | unset | Use external PostgreSQL (needs the `vector` extension) instead of PGlite. |
 | `LTM_SECRET_KEY` | generated | Base64 of 32 bytes. Generated into `LTM_DATA_DIR/secret.key` (0600) when unset. |
 | `LTM_PUBLIC_URL` | derived | Public origin, used in pairing URIs. |
+| `LTM_TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy so client addresses and HTTPS are detected from forwarded headers. |
 | `LTM_ALLOW_REGISTRATION` | `false` | Allow sign-ups after the first (owner) account. |
 | `LTM_ALLOW_CLI_PROVIDERS` | `true` | Offer `claude_code_cli` / `codex_cli` to the owner. |
 | `LTM_{LLM,STT,EMBEDDING}_{KIND,MODEL,BASE_URL,API_KEY}` | unset | Instance-default provider per role. |
