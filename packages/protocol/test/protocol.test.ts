@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   CONSENT_DOCUMENTS,
+  decodeAudioFrame,
+  encodeAudioFrame,
   FRAME_HEADER_BYTES,
   FrameError,
   NOTICE_TEMPLATES,
   PROTOCOL_VERSION,
-  decodeAudioFrame,
-  encodeAudioFrame,
   requiredConsentDocuments,
   zClientMessage,
   zConsentType,
@@ -31,7 +31,12 @@ describe("audio frames", () => {
   });
 
   it("decodes a frame that is a view into a larger buffer", () => {
-    const frame = encodeAudioFrame({ seq: 7, captureTimeMs: 1000, discontinuity: false, payload: new Uint8Array([9, 9]) });
+    const frame = encodeAudioFrame({
+      seq: 7,
+      captureTimeMs: 1000,
+      discontinuity: false,
+      payload: new Uint8Array([9, 9]),
+    });
     const big = new Uint8Array(frame.byteLength + 10);
     big.set(frame, 5);
     const decoded = decodeAudioFrame(big.subarray(5, 5 + frame.byteLength));
@@ -42,10 +47,20 @@ describe("audio frames", () => {
 
   it("rejects malformed frames", () => {
     expect(() => decodeAudioFrame(new Uint8Array(3))).toThrow(FrameError);
-    const bad = encodeAudioFrame({ seq: 0, captureTimeMs: 1, discontinuity: false, payload: new Uint8Array(2) });
+    const bad = encodeAudioFrame({
+      seq: 0,
+      captureTimeMs: 1,
+      discontinuity: false,
+      payload: new Uint8Array(2),
+    });
     bad[0] = 0;
     expect(() => decodeAudioFrame(bad)).toThrow(/magic/);
-    const badVersion = encodeAudioFrame({ seq: 0, captureTimeMs: 1, discontinuity: false, payload: new Uint8Array(2) });
+    const badVersion = encodeAudioFrame({
+      seq: 0,
+      captureTimeMs: 1,
+      discontinuity: false,
+      payload: new Uint8Array(2),
+    });
     badVersion[2] = 9;
     expect(() => decodeAudioFrame(badVersion)).toThrow(/version/);
   });
@@ -69,13 +84,17 @@ describe("client messages", () => {
 
   it("rejects unknown sources and codecs", () => {
     expect(zClientMessage.safeParse({ ...hello, source: "satellite" }).success).toBe(false);
-    expect(zClientMessage.safeParse({ ...hello, audio: { ...hello.audio, codec: "mp3" } }).success).toBe(false);
+    expect(
+      zClientMessage.safeParse({ ...hello, audio: { ...hello.audio, codec: "mp3" } }).success,
+    ).toBe(false);
   });
 
   it("accepts edge transcripts", () => {
     const parsed = zClientMessage.parse({
       type: "transcript",
-      segments: [{ startMs: 1000, endMs: 2500, text: "merhaba dünya", confidence: 0.9, language: "tr" }],
+      segments: [
+        { startMs: 1000, endMs: 2500, text: "merhaba dünya", confidence: 0.9, language: "tr" },
+      ],
     });
     expect(parsed.type).toBe("transcript");
   });
@@ -99,7 +118,9 @@ describe("consent documents", () => {
     expect(local).toEqual(["recording_responsibility", "data_processing"]);
     const cloud = requiredConsentDocuments(["anthropic", "openai_compatible"]).map((d) => d.type);
     expect(cloud).toContain("third_party_ai");
-    expect(requiredConsentDocuments(["claude_code_cli"]).map((d) => d.type)).toContain("third_party_ai");
+    expect(requiredConsentDocuments(["claude_code_cli"]).map((d) => d.type)).toContain(
+      "third_party_ai",
+    );
   });
 });
 
@@ -107,9 +128,12 @@ describe("provider config input", () => {
   it("treats apiKey as optional / nullable write-only", () => {
     expect(zProviderConfigInput.parse({ kind: "anthropic", apiKey: "k" }).apiKey).toBe("k");
     expect(zProviderConfigInput.parse({ kind: "anthropic", apiKey: null }).apiKey).toBeNull();
-    expect(zProviderConfigInput.parse({ kind: "openai_compatible", baseUrl: "http://localhost:11434/v1" }).baseUrl).toBe(
-      "http://localhost:11434/v1",
-    );
+    expect(
+      zProviderConfigInput.parse({
+        kind: "openai_compatible",
+        baseUrl: "http://localhost:11434/v1",
+      }).baseUrl,
+    ).toBe("http://localhost:11434/v1");
     expect(zProviderConfigInput.safeParse({ kind: "bogus" }).success).toBe(false);
   });
 });

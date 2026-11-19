@@ -298,7 +298,10 @@ export const zChunkMeta = z.object({
   source: zAudioSource,
   /** Device-clock time of the first sample in this chunk. */
   startMs: zEpochMs,
-  durationMs: z.number().positive().max(10 * 60 * 1000),
+  durationMs: z
+    .number()
+    .positive()
+    .max(10 * 60 * 1000),
   /** Device clock "now" when the upload is attempted (clock-offset estimation). */
   clientTimeMs: zEpochMs,
   language: zLanguage.optional(),

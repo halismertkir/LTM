@@ -46,9 +46,12 @@ export function consentDocument(type: ConsentType): ConsentDocument {
  * Which documents an account must have accepted (at their current version) before any
  * ingest is allowed, given the provider kinds that are effectively configured for it.
  */
-export function requiredConsentDocuments(effectiveProviderKinds: readonly ProviderKind[]): ConsentDocument[] {
+export function requiredConsentDocuments(
+  effectiveProviderKinds: readonly ProviderKind[],
+): ConsentDocument[] {
   const usesThirdParty = effectiveProviderKinds.some((k) => THIRD_PARTY_PROVIDER_KINDS.includes(k));
   return CONSENT_DOCUMENTS.filter(
-    (d) => d.requiredWhen === "always" || (d.requiredWhen === "third_party_provider" && usesThirdParty),
+    (d) =>
+      d.requiredWhen === "always" || (d.requiredWhen === "third_party_provider" && usesThirdParty),
   );
 }

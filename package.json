@@ -5,7 +5,9 @@
   "description": "LTM — self-hosted long-term memory from your conversations, across devices.",
   "license": "SEE LICENSE IN LICENSE",
   "packageManager": "pnpm@10.28.0",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "pnpm --parallel --filter @ltm/server --filter @ltm/web dev",
     "build": "pnpm -r build",
