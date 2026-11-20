@@ -159,6 +159,17 @@ function sameTokens(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((t, i) => t === b[i]);
 }
 
+/** True when `needle` occurs in `haystack` as one uninterrupted run. */
+function containsRun(haystack: readonly string[], needle: readonly string[]): boolean {
+  if (needle.length === 0 || needle.length > haystack.length) return false;
+  for (let i = 0; i + needle.length <= haystack.length; i++) {
+    let k = 0;
+    while (k < needle.length && haystack[i + k] === needle[k]) k++;
+    if (k === needle.length) return true;
+  }
+  return false;
+}
+
 function isShort(s: Seg, o: Resolved): boolean {
   return s.tokens.length < o.minTokensForLooseMatch;
 }
@@ -171,6 +182,16 @@ function isShort(s: Seg, o: Resolved): boolean {
 function shortLinked(short: Seg, other: Seg, o: Resolved): boolean {
   if (short.tokens.length === 0 || other.tokens.length === 0) return false;
   if (speakersConflict(short.speaker, other.speaker)) return false;
+  // Recognisers often cut the last words of a sentence into a segment of their own
+  // ("…taslağını | avukata göndereceğim"). Two or more words that the other stream says
+  // verbatim and contiguously at about the same time are that tail, not an interjection,
+  // so they may use the clock tolerance that single words are denied.
+  if (short.tokens.length >= 2 && !isShort(other, o)) {
+    const tol = o.clockToleranceMs;
+    if (containsRun(tokensInWindow(other, short.start - tol, short.end + tol), short.tokens)) {
+      return true;
+    }
+  }
   const minDur = Math.max(
     SHORT_MIN_DURATION_MS,
     Math.min(short.end - short.start, other.end - other.start),

@@ -50,14 +50,31 @@ async function expand(ctx: Ctx, userId: string, hit: SearchHit): Promise<string>
  * marker repeated right after itself ("… 15% [3]. [3]" → "… 15% [3].").
  */
 export function cleanCitations(answer: string, evidenceCount: number): string {
-  let out = answer.replace(/\[(\d+(?:\s*,\s*\d+)*)\]/g, (_m, list: string) => {
-    const nums = [...new Set(list.split(",").map((n) => Number(n.trim())))].filter(
-      (n) => Number.isInteger(n) && n >= 1 && n <= evidenceCount,
-    );
-    return nums.length ? `[${nums.join(", ")}]` : "";
+  // "[2, 3]" and "[2][3]" both become "[2][3]"; numbers outside the evidence list go.
+  let out = answer.replace(/\[(\d+(?:\s*,\s*\d+)*)\]/g, (_m, list: string) =>
+    [...new Set(list.split(",").map((n) => Number(n.trim())))]
+      .filter((n) => Number.isInteger(n) && n >= 1 && n <= evidenceCount)
+      .map((n) => `[${n}]`)
+      .join(""),
+  );
+  // A run of markers cites each source once, and a run that only repeats sources already
+  // cited just before it (small models write "… [2][3]. [3]") is dropped.
+  const RUN = /((?:\[\d+\]\s*)+)/g;
+  let previous = new Set<string>();
+  let lastEnd = -1;
+  out = out.replace(RUN, (run: string, _g: string, offset: number) => {
+    const between = lastEnd < 0 ? "x" : out.slice(lastEnd, offset);
+    const adjacent = /^[\s.,;:]*$/.test(between);
+    const seen = adjacent ? previous : new Set<string>();
+    const kept: string[] = [];
+    for (const m of run.match(/\[\d+\]/g) ?? []) {
+      if (!seen.has(m) && !kept.includes(m)) kept.push(m);
+    }
+    previous = new Set([...seen, ...kept]);
+    lastEnd = offset + run.length;
+    const trailing = /\s$/.test(run) ? " " : "";
+    return kept.length ? kept.join("") + trailing : "";
   });
-  // "[3] [3]", "[3][3]", "[3]. [3]" → "[3]" (keeping the punctuation in between).
-  for (let i = 0; i < 3; i++) out = out.replace(/(\[[\d, ]+\])([.,;:]?)\s*\1/g, "$1$2");
   return out
     .replace(/[ \t]+([.,;:])/g, "$1")
     .replace(/[ \t]{2,}/g, " ")

@@ -4,6 +4,7 @@ import { type Ctx, iso } from "../context.js";
 import { json, one, type Queryable } from "../db/types.js";
 import { badRequest, isProviderError } from "../errors.js";
 import { decideLanguage, dominantLanguage, languageDirective } from "../pipeline/language.js";
+import { cleanPeople } from "../pipeline/people.js";
 import { digestSystemPrompt, zDayDigestOut } from "../pipeline/prompts.js";
 import type { JobHandler } from "../pipeline/worker.js";
 import { localDate, localTime, weekdayLabel } from "../time.js";
@@ -401,9 +402,11 @@ export async function runDigest(
   }));
   const omitted = convs.length - input.length;
   const prompt = `Day: ${weekdayLabel(date)} (time zone ${tz}). ${convs.length} conversation(s)${omitted > 0 ? `, ${omitted} without notes not shown` : ""}.\n\n<conversations>\n${JSON.stringify(input, null, 1)}\n</conversations>`;
-  const owner = await one<{ locale: string }>(ctx.db, "SELECT locale FROM users WHERE id = $1", [
-    userId,
-  ]);
+  const owner = await one<{ locale: string; display_name: string }>(
+    ctx.db,
+    "SELECT locale, display_name FROM users WHERE id = $1",
+    [userId],
+  );
   const outLang = decideLanguage({
     fixed: pipeline.language,
     spoken: dominantLanguage(
@@ -428,7 +431,7 @@ export async function runDigest(
     digest: value.digest.trim().slice(0, 50_000) || null,
     highlights: cleanList(value.highlights, 10, 400),
     decisions: cleanList(value.decisions, 30, 600),
-    people: cleanList(value.people, 40, 120),
+    people: cleanPeople(cleanList(value.people, 40, 120), owner?.display_name ?? "", 40),
     language,
     status_detail: null,
     generated_at: ctx.clock.now(),

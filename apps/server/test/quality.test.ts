@@ -153,6 +153,10 @@ describe("output language is decided in code", () => {
   it("cleanCitations", () => {
     expect(cleanCitations("It grew by 15% [3]. [3]", 3)).toBe("It grew by 15% [3].");
     expect(cleanCitations("A [1][1] B [2] [2] C [1, 9, 1]", 2)).toBe("A [1] B [2] C [1]");
+    expect(cleanCitations("Two days [2, 3]. [3] And new terms.", 3)).toBe(
+      "Two days [2][3]. And new terms.",
+    );
+    expect(cleanCitations("First [1]. Later, again [1].", 2)).toBe("First [1]. Later, again [1].");
     expect(cleanCitations("Nothing [4].", 3)).toBe("Nothing.");
   });
 });

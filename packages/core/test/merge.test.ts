@@ -590,3 +590,70 @@ describe("mergeSegments corroboration across a pause", () => {
     expect([...ids].sort()).toEqual(["a1", "w1", "w2"]);
   });
 });
+
+describe("mergeSegments with a sentence tail cut into its own short segment", () => {
+  const t0 = 1_000_000;
+  const seg = (
+    id: string,
+    streamId: string,
+    deviceId: string,
+    source: "mic" | "ambient",
+    startS: number,
+    endS: number,
+    text: string,
+  ) => ({
+    id,
+    streamId,
+    deviceId,
+    source,
+    origin: "server_stt" as const,
+    startMs: t0 + startS * 1000,
+    endMs: t0 + endS * 1000,
+    text,
+  });
+  const desk = seg(
+    "m1",
+    "mic",
+    "desk",
+    "mic",
+    0,
+    6,
+    "Yarın sabah ilk iş olarak sözleşme taslağını avukata göndereceğim.",
+  );
+
+  it("folds a two-word tail heard slightly later by another device into the sentence", () => {
+    const out = mergeSegments([
+      desk,
+      seg(
+        "w1",
+        "watch",
+        "watch",
+        "ambient",
+        1.4,
+        5.6,
+        "yarın sabah ilk iş olarak sözleşme taslağını",
+      ),
+      // The watch's recogniser split the tail off; its clock runs 1.6 s ahead.
+      seg("w2", "watch", "watch", "ambient", 6.3, 7.6, "avukata göndereceğim."),
+    ]);
+    expect(out.map((u) => u.text)).toEqual([desk.text]);
+    expect(out[0]!.deviceIds).toEqual(["desk", "watch"]);
+    expect([...out[0]!.segmentIds].sort()).toEqual(["m1", "w1", "w2"]);
+  });
+
+  it("keeps the same two words when they are said well outside the clock tolerance", () => {
+    const out = mergeSegments([
+      desk,
+      seg("w2", "watch", "watch", "ambient", 20, 21.2, "avukata göndereceğim."),
+    ]);
+    expect(out.map((u) => u.text)).toEqual([desk.text, "avukata göndereceğim."]);
+  });
+
+  it("still refuses to glue a single word by the looser rule", () => {
+    const out = mergeSegments([
+      desk,
+      seg("w3", "watch", "watch", "ambient", 7.5, 8, "göndereceğim"),
+    ]);
+    expect(out).toHaveLength(2);
+  });
+});

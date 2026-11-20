@@ -19,6 +19,7 @@ import { insertMemory, type MemoryRow, memoryDto, scheduleEmbed } from "../servi
 import { getPipeline, resolveProvidersForUser } from "../services/settings.js";
 import { decideLanguage, dominantLanguage, languageDirective } from "./language.js";
 import { remergeConversation } from "./merge.js";
+import { cleanPeople, normalizeOwner } from "./people.js";
 import {
   type ConversationNotes,
   formatHeader,
@@ -37,6 +38,8 @@ import {
   zPartNotes,
 } from "./prompts.js";
 import type { JobHandler } from "./worker.js";
+
+export { normalizeOwner };
 
 /** Transcripts up to this size go to the model in one request; longer ones are map-reduced. */
 export const SINGLE_PASS_CHARS = 60_000;
@@ -121,47 +124,6 @@ async function generateNotes(
     signal,
   });
   return value;
-}
-
-/** Words models use for "the account owner" instead of a name (English and Turkish). */
-const SELF_OWNERS = new Set([
-  "self",
-  "me",
-  "i",
-  "myself",
-  "user",
-  "the user",
-  "speaker",
-  "owner",
-  "ben",
-  "kendim",
-  "bana",
-]);
-
-/** What small models write instead of leaving the owner empty. */
-const NO_OWNERS = new Set([
-  "unknown",
-  "none",
-  "null",
-  "n/a",
-  "na",
-  "-",
-  "?",
-  "unassigned",
-  "nobody",
-  "bilinmiyor",
-  "belirsiz",
-  "yok",
-]);
-
-/** The account owner's own tasks carry their display name, never a speaker label. */
-export function normalizeOwner(raw: string | null, displayName: string): string | null {
-  if (!raw) return null;
-  const v = clean(raw, 120);
-  if (!v) return null;
-  const key = v.toLowerCase();
-  if (NO_OWNERS.has(key)) return null;
-  return SELF_OWNERS.has(key) ? displayName : v;
 }
 
 /** Keeps done/edited action items, reuses ids of unchanged ones, replaces the rest. */
@@ -448,7 +410,7 @@ export async function runConsolidate(
     const notesMd = fresh.notes_edited ? fresh.notes : notes.notes.trim().slice(0, 100_000) || null;
     const summary = clean(notes.summary, 4000) || null;
     const topics = cleanList(notes.topics, 10, 80);
-    const participants = cleanList(notes.participants, 30, 120);
+    const participants = cleanPeople(cleanList(notes.participants, 30, 120), account.displayName);
     await q.query(
       `UPDATE conversations SET status = 'ready', status_detail = NULL, title = $2, summary = $3, notes = $4,
               decisions = $5::jsonb, participants = $6::jsonb, topics = $7::jsonb, language = $8,
@@ -580,7 +542,7 @@ export async function runLiveNotes(
     const notesMd = fresh.notes_edited ? fresh.notes : notes.notes.trim().slice(0, 100_000) || null;
     const summary = clean(notes.summary, 4000) || null;
     const topics = cleanList(notes.topics, 10, 80);
-    const participants = cleanList(notes.participants, 30, 120);
+    const participants = cleanPeople(cleanList(notes.participants, 30, 120), account.displayName);
     await q.query(
       `UPDATE conversations SET title = $2, summary = $3, notes = $4, decisions = $5::jsonb, participants = $6::jsonb,
               topics = $7::jsonb, language = $8, search_text = $9, interim = true, live_revision = $10,
