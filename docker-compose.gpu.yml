@@ -1,0 +1,27 @@
+# NVIDIA GPU override for the local-ai profile. Requires the NVIDIA Container Toolkit
+# (https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/) on the host.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile local-ai up -d
+#
+# Whisper and the language model then run on the graphics card. Check with:
+#   docker compose exec ollama nvidia-smi
+
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  speaches:
+    image: ghcr.io/speaches-ai/speaches:latest-cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

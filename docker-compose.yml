@@ -3,6 +3,7 @@
 #   docker compose up -d                       → LTM with its embedded database
 #   docker compose --profile postgres up -d    → LTM + PostgreSQL/pgvector (set DATABASE_URL in .env)
 #   docker compose --profile local-ai up -d    → adds Ollama (LLM, embeddings) and Speaches (Whisper)
+#   … -f docker-compose.yml -f docker-compose.gpu.yml --profile local-ai up -d   → the same on an NVIDIA GPU
 #
 # Copy .env.example to .env first. Put a TLS-terminating reverse proxy in front before
 # exposing this beyond your own machine — see docs/SELF_HOSTING.md.
@@ -29,7 +30,8 @@ services:
     environment:
       POSTGRES_USER: ltm
       POSTGRES_DB: ltm
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      # Required for this profile; the database refuses to initialise with an empty password.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
     volumes:
       - ltm-postgres:/var/lib/postgresql/data
     healthcheck:
@@ -44,11 +46,7 @@ services:
     restart: unless-stopped
     volumes:
       - ollama-models:/root/.ollama
-    # GPU: uncomment on a host with the NVIDIA container toolkit.
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
+    # For an NVIDIA graphics card add docker-compose.gpu.yml (see that file).
 
   speaches:
     profiles: [local-ai]
