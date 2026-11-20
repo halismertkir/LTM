@@ -20,7 +20,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Ctx } from "../../context.js";
 import { json, one } from "../../db/types.js";
-import { notFound } from "../../errors.js";
+import { ApiError, notFound } from "../../errors.js";
 import { STT_NOT_CONFIGURED } from "../../pipeline/transcribe.js";
 import { ask } from "../../services/ask.js";
 import {
@@ -32,6 +32,7 @@ import {
   getConversationRow,
   listConversations,
 } from "../../services/conversations.js";
+import { scheduleDigest } from "../../services/days.js";
 import { deleteConversations } from "../../services/erase.js";
 import { type StreamRow, streamActive, streamInfoDto } from "../../services/ingest.js";
 import {
@@ -44,20 +45,22 @@ import {
 } from "../../services/memories.js";
 import { search } from "../../services/search.js";
 import { resolveProviders } from "../../services/settings.js";
-import { parse, sessionUser } from "../plumbing.js";
+import { parse, sessionUser, userOf } from "../plumbing.js";
+
+const MAX_SSE_PER_USER = 32;
 
 const zIdParam = z.object({ id: z.string().min(1).max(64) });
 
 export async function memoryRoutes(app: FastifyInstance, ctx: Ctx): Promise<void> {
   // ------------------------------------------------------------ conversations
   app.get(ROUTES.conversations, async (req) => {
-    const { user } = sessionUser(req);
+    const user = userOf(req);
     const query = parse(zConversationQuery, req.query);
     return listConversations(ctx.db, user.id, query);
   });
 
   app.get(ROUTES.conversation, async (req): Promise<ConversationDetail> => {
-    const { user } = sessionUser(req);
+    const user = userOf(req);
     const { id } = parse(zIdParam, req.params);
     const detail = await conversationDetail(ctx.db, user.id, id);
     if (!detail) throw notFound("Conversation not found.");
@@ -94,6 +97,9 @@ export async function memoryRoutes(app: FastifyInstance, ctx: Ctx): Promise<void
         ctx.clock.now(),
       ],
     );
+    // The day's digest names conversations by title.
+    if (body.title !== undefined && title !== conv.title)
+      await scheduleDigest(ctx, ctx.db, user.id, conv.local_date);
     const detail = (await conversationDetail(ctx.db, user.id, id))!;
     const [summary] = await conversationSummaries(ctx.db, user.id, [id]);
     if (summary) ctx.bus.publish(user.id, { type: "conversation_updated", conversation: summary });
@@ -128,6 +134,7 @@ export async function memoryRoutes(app: FastifyInstance, ctx: Ctx): Promise<void
         payload: { conversationId: id, remerge: true },
         dedupeKey: `consolidate:${id}`,
       });
+      await scheduleDigest(ctx, q, user.id, conv.local_date);
     });
     const [summary] = await conversationSummaries(ctx.db, user.id, [id]);
     if (summary) ctx.bus.publish(user.id, { type: "conversation_updated", conversation: summary });
@@ -135,7 +142,7 @@ export async function memoryRoutes(app: FastifyInstance, ctx: Ctx): Promise<void
   });
 
   app.patch(ROUTES.actionItem, async (req): Promise<ActionItem> => {
-    const { user } = sessionUser(req);
+    const user = userOf(req);
     const { id, itemId } = parse(
       z.object({ id: z.string().min(1).max(64), itemId: z.string().min(1).max(64) }),
       req.params,
@@ -154,12 +161,12 @@ export async function memoryRoutes(app: FastifyInstance, ctx: Ctx): Promise<void
 
   // ------------------------------------------------------------ memories
   app.get(ROUTES.memories, async (req) => {
-    const { user } = sessionUser(req);
+    const user = userOf(req);
     return listMemories(ctx.db, user.id, parse(zMemoryQuery, req.query));
   });
 
   app.post(ROUTES.memories, async (req, reply): Promise<Memory> => {
-    const { user } = sessionUser(req);
+    const user = userOf(req);
     const body = parse(zMemoryCreate, req.body);
     const row = await ctx.db.tx(async (q) => {
       const r = await insertMemory(ctx, q, user.id, {
@@ -222,22 +229,33 @@ export async function memoryRoutes(app: FastifyInstance, ctx: Ctx): Promise<void
 
   // ------------------------------------------------------------ search & ask
   app.post(ROUTES.search, async (req): Promise<SearchResponse> => {
-    const { user } = sessionUser(req);
+    const user = userOf(req);
     const body = parse(zSearchRequest, req.body);
     const { embedding } = await resolveProviders(ctx, user, ["embedding"]);
     return search(ctx, user.id, embedding, body);
   });
 
-  app.post(ROUTES.ask, async (req): Promise<AskResponse> => {
-    const { user } = sessionUser(req);
-    return ask(ctx, user, parse(zAskRequest, req.body));
+  app.post(ROUTES.ask, async (req, reply): Promise<AskResponse> => {
+    const user = userOf(req);
+    const body = parse(zAskRequest, req.body);
+    // A client that gives up must not leave a slow local model generating for nobody.
+    const abort = new AbortController();
+    const onClose = () => {
+      if (!reply.raw.writableEnded) abort.abort();
+    };
+    req.raw.socket?.once("close", onClose);
+    try {
+      return await ask(ctx, user, body, abort.signal);
+    } finally {
+      req.raw.socket?.off("close", onClose);
+    }
   });
 
   // ------------------------------------------------------------ streams & live events
   app.get(
     ROUTES.streams,
     async (req): Promise<(StreamInfo & { statusDetail: string | null })[]> => {
-      const { user } = sessionUser(req);
+      const user = userOf(req);
       const { active } = parse(
         z.object({ active: z.enum(["true", "false"]).optional() }),
         req.query,
@@ -263,7 +281,15 @@ export async function memoryRoutes(app: FastifyInstance, ctx: Ctx): Promise<void
   );
 
   app.get(ROUTES.events, async (req, reply) => {
-    const { user } = sessionUser(req);
+    const user = userOf(req);
+    // Each open stream holds a listener; a client that leaks reconnects must not grow it unboundedly.
+    if (ctx.bus.subscriberCount(user.id) >= MAX_SSE_PER_USER) {
+      throw new ApiError(
+        429,
+        "rate_limited",
+        "Too many live event streams are open for this account.",
+      );
+    }
     reply.hijack();
     const res = reply.raw;
     res.writeHead(200, {

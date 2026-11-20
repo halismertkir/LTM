@@ -28,6 +28,8 @@ export interface Config {
   allowRegistration: boolean;
   allowCliProviders: boolean;
   providerDefaults: Record<ProviderRole, InstanceProviderDefault | null>;
+  /** Per-request provider timeouts. Local models on a CPU are slow; the defaults are generous. */
+  providerTimeoutsMs: Record<ProviderRole, number>;
   webDir: string | null;
   logLevel: string;
   /** Honour X-Forwarded-* from a reverse proxy (client IP, https detection). */
@@ -87,6 +89,23 @@ function parseBool(
   if (["0", "false", "no", "off"].includes(v)) return false;
   problems.push(`${name} must be true or false (got "${raw}")`);
   return fallback;
+}
+
+function parseMs(
+  name: string,
+  raw: string | undefined,
+  fallback: number,
+  problems: string[],
+): number {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const n = Number(raw.trim());
+  if (!Number.isInteger(n) || n < 1000 || n > 24 * 3600_000) {
+    problems.push(
+      `${name} must be a whole number of milliseconds between 1000 and 86400000 (got "${raw}")`,
+    );
+    return fallback;
+  }
+  return n;
 }
 
 function nonEmpty(raw: string | undefined): string | null {
@@ -226,6 +245,11 @@ export function loadConfig(
     problems,
   );
   const trustProxy = parseBool("LTM_TRUST_PROXY", env.LTM_TRUST_PROXY, false, problems);
+  const providerTimeoutsMs = {
+    llm: parseMs("LTM_LLM_TIMEOUT_MS", env.LTM_LLM_TIMEOUT_MS, 600_000, problems),
+    stt: parseMs("LTM_STT_TIMEOUT_MS", env.LTM_STT_TIMEOUT_MS, 300_000, problems),
+    embedding: parseMs("LTM_EMBEDDING_TIMEOUT_MS", env.LTM_EMBEDDING_TIMEOUT_MS, 120_000, problems),
+  };
 
   // Only touch the filesystem for the secret once everything else is known to be valid.
   const secretKey =
@@ -244,6 +268,7 @@ export function loadConfig(
     allowRegistration,
     allowCliProviders,
     providerDefaults,
+    providerTimeoutsMs,
     webDir,
     logLevel,
     trustProxy,

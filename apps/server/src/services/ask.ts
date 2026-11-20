@@ -1,6 +1,7 @@
 import type { AskRequest, AskResponse, SearchHit } from "@ltm/protocol";
 import type { Ctx } from "../context.js";
 import { ApiError, isProviderError } from "../errors.js";
+import { languageName } from "../pipeline/language.js";
 import { askSystemPrompt } from "../pipeline/prompts.js";
 import { search } from "./search.js";
 import { resolveProviders } from "./settings.js";
@@ -44,10 +45,30 @@ async function expand(ctx: Ctx, userId: string, hit: SearchHit): Promise<string>
     .slice(0, 1500);
 }
 
+/**
+ * Tidies citation markers: drops numbers that are not in the evidence list and collapses a
+ * marker repeated right after itself ("… 15% [3]. [3]" → "… 15% [3].").
+ */
+export function cleanCitations(answer: string, evidenceCount: number): string {
+  let out = answer.replace(/\[(\d+(?:\s*,\s*\d+)*)\]/g, (_m, list: string) => {
+    const nums = [...new Set(list.split(",").map((n) => Number(n.trim())))].filter(
+      (n) => Number.isInteger(n) && n >= 1 && n <= evidenceCount,
+    );
+    return nums.length ? `[${nums.join(", ")}]` : "";
+  });
+  // "[3] [3]", "[3][3]", "[3]. [3]" → "[3]" (keeping the punctuation in between).
+  for (let i = 0; i < 3; i++) out = out.replace(/(\[[\d, ]+\])([.,;:]?)\s*\1/g, "$1$2");
+  return out
+    .replace(/[ \t]+([.,;:])/g, "$1")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
 export async function ask(
   ctx: Ctx,
-  user: { id: string; role: "owner" | "member" },
+  user: { id: string; role: "owner" | "member"; locale?: string },
   req: AskRequest,
+  signal?: AbortSignal,
 ): Promise<AskResponse> {
   const { llm, embedding } = await resolveProviders(ctx, user, ["llm", "embedding"]);
   if (!llm)
@@ -74,10 +95,17 @@ export async function ask(
       `[${i + 1}] ${LABEL[h.type]}, ${when} UTC${title}\n${await expand(ctx, user.id, h)}`,
     );
   }
-  const prompt = `<question>\n${req.question}\n</question>\n\n<evidence>\n${blocks.length ? blocks.join("\n\n") : "(no evidence found)"}\n</evidence>`;
+  // Small models ignore "answer in the language of the question" unless reminded at the end.
+  const likely = languageName(user.locale ?? "en");
+  const prompt = `<question>\n${req.question}\n</question>\n\n<evidence>\n${blocks.length ? blocks.join("\n\n") : "(no evidence found)"}\n</evidence>\n\nThe question is most likely in ${likely}; answer in the language the question is written in.`;
   try {
-    const res = await llm.complete({ system: askSystemPrompt(), prompt, maxTokens: 2000 });
-    return { answer: res.text.trim(), citations: hits };
+    const res = await llm.complete({
+      system: askSystemPrompt(),
+      prompt,
+      maxTokens: 2000,
+      ...(signal ? { signal } : {}),
+    });
+    return { answer: cleanCitations(res.text, hits.length), citations: hits };
   } catch (err) {
     if (isProviderError(err)) {
       throw new ApiError(

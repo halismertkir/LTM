@@ -59,6 +59,10 @@ stream, timestamps already on the server clock).
    segments). It then closes open conversations whose last speech is older than the gap
    and for which no audio before that point is still waiting for transcription, and
    queues **consolidate**.
+   While a conversation is still open and its speech has advanced `liveNotesMinutes`
+   (default 15) beyond the last pass, an **interim consolidate** pass runs: it gets the
+   previous interim notes plus only the new transcript, writes title/summary/notes/action
+   items (`interim: true`), never extracts memories and never changes the status.
 3. **consolidate**: one structured LLM call (map-reduce over overlapping parts for long
    transcripts) for title, summary, notes, decisions, action items, participants,
    topics, language and memory candidates. User-edited title/notes are kept; done or
@@ -67,8 +71,26 @@ stream, timestamps already on the server clock).
    permanent failure, gives `transcript_only` with a `statusDetail`.
 4. **embed**: vectors for memories, conversation summaries and windows of 4 utterances,
    stored with their model name; only vectors of the same model are compared.
-5. **retention** (at boot, hourly, and after privacy changes): audio and data retention,
-   expired sessions and pairing codes.
+5. **digest** (debounced 60 s per user and day): when a conversation of a day is
+   consolidated (final or interim), edited, reprocessed or deleted, or the time zone
+   changes, one LLM call over that day's titles, summaries, decisions, open action items
+   and participants (never transcripts) writes the day's headline, summary and digest.
+   A conversation belongs to the local day (pipeline `timeZone`) on which it started.
+6. **retention** (at boot, hourly, and after privacy changes): audio and data retention,
+   expired sessions and pairing codes, failed jobs older than a day, and audio files that
+   no row references (crash leftovers).
+
+The output language of notes and digests is decided in code — the fixed pipeline
+language, else the dominant language of what was spoken, else the account locale — and
+stated by name in the system prompt and again as the last line of the prompt, because
+small local models otherwise drift into English. Provider calls use per-role timeouts
+(`LTM_LLM_TIMEOUT_MS`, `LTM_STT_TIMEOUT_MS`, `LTM_EMBEDDING_TIMEOUT_MS`).
+
+Device tokens are limited by the device's `access` (`DEVICE_ROUTES` in `@ltm/protocol`):
+`capture` devices may only send audio/transcripts; `memory` devices (the owner's phone)
+may also read, search, ask, tick action items, add memories, follow `/events` (bearer
+header) and flip the capture kill switch. The server checks at start-up that every
+allow-list entry is a registered route.
 
 Jobs are rows in `jobs`; the worker claims due jobs (`FOR UPDATE SKIP LOCKED`), never runs
 two jobs with the same lock key at once, retries retryable provider errors with

@@ -28,6 +28,9 @@ export const DEFAULT_PIPELINE: PipelineSettings = {
   language: null,
   conversationGapMinutes: 5,
   extractMemories: true,
+  liveNotesMinutes: 15,
+  dailyDigest: true,
+  timeZone: "UTC",
 };
 
 export const ROLES: readonly ProviderRole[] = ["llm", "stt", "embedding"];
@@ -186,7 +189,14 @@ export function resolvedConfig(
   let apiKey: string | null = e.instanceApiKey;
   if (e.origin === "user" && e.apiKeySealed)
     apiKey = ctx.secrets.open(e.apiKeySealed, apiKeyAad(userId, e.role));
-  return { role: e.role, kind: e.kind, model: e.model, baseUrl: e.baseUrl, apiKey };
+  return {
+    role: e.role,
+    kind: e.kind,
+    model: e.model,
+    baseUrl: e.baseUrl,
+    apiKey,
+    timeoutMs: ctx.config.providerTimeoutsMs[e.role],
+  };
 }
 
 export interface UserProviders {

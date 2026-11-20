@@ -18,8 +18,11 @@ import { zStreamContext } from "./ws.js";
  * REST API — all paths are relative to API_PREFIX ("/api/v1").
  *
  * Authentication: `Authorization: Bearer <token>` (devices, scripts) or the httpOnly
- * `ltm_session` cookie (web app). User sessions may call everything; device tokens may
- * only call `/me`, `/consents`, `/ingest/*` and `/devices/self`.
+ * `ltm_session` cookie (web app). User sessions may call everything. What a device token
+ * may call depends on the device's `access` (see `DEVICE_ROUTES`): every device can
+ * capture; a device paired with `access: "memory"` — the user's own phone, for example —
+ * can also read, search and question the memory, but never touch account, provider,
+ * retention or device settings.
  *
  * Errors: non-2xx responses carry `ErrorResponse` (see common.ts).
  */
@@ -36,7 +39,7 @@ export const ROUTES = {
 
   // --- devices
   devices: "/devices", // GET → Device[]
-  devicePairingCodes: "/devices/pairing-codes", // POST → PairingCode (user session)
+  devicePairingCodes: "/devices/pairing-codes", // POST PairingCodeRequest → PairingCode (user session)
   devicePair: "/devices/pair", // POST PairRequest → PairResponse (public; the code is the credential)
   deviceSelf: "/devices/self", // GET → Device (device token)
   device: "/devices/:id", // PATCH DeviceUpdate → Device, DELETE → 204 (revokes its token)
@@ -62,6 +65,10 @@ export const ROUTES = {
   ask: "/ask", // POST AskRequest → AskResponse
   streams: "/streams", // GET ?active=true → StreamInfo[]
   events: "/events", // GET text/event-stream of LiveEvent (JSON in `data:`)
+  days: "/days", // GET ?from&to&limit&cursor → Page<DaySummary>, newest first
+  day: "/days/:date", // GET → DayDetail (`date` is YYYY-MM-DD in the user's time zone)
+  dayRegenerate: "/days/:date/regenerate", // POST → 202
+  capturePause: "/capture/pause", // POST CapturePause → CapturePauseState (the kill switch)
 
   // --- settings
   settings: "/settings", // GET → Settings
@@ -131,6 +138,8 @@ export const zSetupRequest = z.object({
   password: zPassword,
   displayName: z.string().min(1).max(80),
   locale: zLocale.default("en"),
+  /** IANA zone of the person signing up (e.g. "Europe/Istanbul"); decides where days begin. */
+  timeZone: z.string().min(1).max(64).optional(),
 });
 export type SetupRequest = z.input<typeof zSetupRequest>;
 export const zRegisterRequest = zSetupRequest;
@@ -154,10 +163,53 @@ export type AuthResponse = z.infer<typeof zAuthResponse>;
 // Devices
 // ---------------------------------------------------------------------------
 
+/**
+ * What a device token is allowed to do.
+ * - `capture`: send audio/transcripts, read its own state and consent. The default.
+ * - `memory`: additionally read conversations, days and memories, search and ask, tick
+ *   action items, add memories, follow live events and flip the capture kill switch.
+ */
+export const zDeviceAccess = z.enum(["capture", "memory"]);
+export type DeviceAccess = z.infer<typeof zDeviceAccess>;
+
+type RouteName = keyof typeof ROUTES;
+const CAPTURE_ROUTES: readonly { method: string; route: RouteName }[] = [
+  { method: "GET", route: "me" },
+  { method: "GET", route: "deviceSelf" },
+  { method: "GET", route: "consents" },
+  { method: "POST", route: "consents" },
+  { method: "POST", route: "consentWithdraw" },
+  { method: "GET", route: "ingestWs" },
+  { method: "POST", route: "ingestChunks" },
+  { method: "POST", route: "ingestTranscripts" },
+  { method: "POST", route: "ingestStreamEnd" },
+];
+/** The complete allow-list per access level. Anything not listed needs a user session. */
+export const DEVICE_ROUTES: Record<DeviceAccess, readonly { method: string; route: RouteName }[]> =
+  {
+    capture: CAPTURE_ROUTES,
+    memory: [
+      ...CAPTURE_ROUTES,
+      { method: "GET", route: "conversations" },
+      { method: "GET", route: "conversation" },
+      { method: "PATCH", route: "actionItem" },
+      { method: "GET", route: "memories" },
+      { method: "POST", route: "memories" },
+      { method: "POST", route: "search" },
+      { method: "POST", route: "ask" },
+      { method: "GET", route: "streams" },
+      { method: "GET", route: "events" },
+      { method: "GET", route: "days" },
+      { method: "GET", route: "day" },
+      { method: "POST", route: "capturePause" },
+    ],
+  };
+
 export const zDevice = z.object({
   id: zId,
   name: z.string(),
   kind: zDeviceKind,
+  access: zDeviceAccess,
   platform: z.string().nullable(),
   appVersion: z.string().nullable(),
   /**
@@ -172,10 +224,17 @@ export const zDevice = z.object({
 });
 export type Device = z.infer<typeof zDevice>;
 
+export const zPairingCodeRequest = z.object({
+  /** Access the device paired with this code will get. */
+  access: zDeviceAccess.default("capture"),
+});
+export type PairingCodeRequest = z.input<typeof zPairingCodeRequest>;
+
 export const zPairingCode = z.object({
   /** Human-typable, e.g. "K7QF-2MXD". Single use, valid for 10 minutes. */
   code: z.string(),
   expiresAt: zIsoDate,
+  access: zDeviceAccess,
   /**
    * `ltm://pair?server=<origin>&code=<code>` — render as QR for the phone.
    * The watch is paired through the phone and never scans this itself.
@@ -204,6 +263,7 @@ export type PairResponse = z.infer<typeof zPairResponse>;
 export const zDeviceUpdate = z.object({
   name: z.string().min(1).max(80).optional(),
   priority: z.number().int().min(0).max(100).nullable().optional(),
+  access: zDeviceAccess.optional(),
 });
 export type DeviceUpdate = z.infer<typeof zDeviceUpdate>;
 
@@ -409,6 +469,11 @@ export const zConversationSummary = z.object({
   deviceIds: z.array(zId),
   utteranceCount: z.number().int(),
   openActionItems: z.number().int(),
+  /**
+   * True while the conversation is still `open` but already carries a title, summary and
+   * notes written from what has been heard so far (see `liveNotesMinutes`).
+   */
+  interim: z.boolean(),
   updatedAt: zIsoDate,
 });
 export type ConversationSummary = z.infer<typeof zConversationSummary>;
@@ -672,6 +737,16 @@ export const zPipelineSettings = z.object({
   conversationGapMinutes: z.number().int().min(1).max(240),
   /** Extract durable long-term memories from every conversation. */
   extractMemories: z.boolean(),
+  /**
+   * While a conversation is still going on, rewrite its notes every this many minutes of
+   * new speech, so a long day of listening is summarised as it happens. 0 = only when a
+   * conversation ends. Each rewrite is one language-model call.
+   */
+  liveNotesMinutes: z.number().int().min(0).max(240),
+  /** Keep a digest of every day (headline, highlights, decisions, open tasks). */
+  dailyDigest: z.boolean(),
+  /** IANA time zone that decides where a day begins and how dates are worded. */
+  timeZone: z.string().min(1).max(64),
 });
 export type PipelineSettings = z.infer<typeof zPipelineSettings>;
 
@@ -700,6 +775,73 @@ export const zDeleteAccountRequest = z.object({
 export type DeleteAccountRequest = z.infer<typeof zDeleteAccountRequest>;
 
 // ---------------------------------------------------------------------------
+// Capture kill switch
+// ---------------------------------------------------------------------------
+
+export const zCapturePause = z.object({ paused: z.boolean() });
+export type CapturePause = z.infer<typeof zCapturePause>;
+export const zCapturePauseState = z.object({ ingestPaused: z.boolean() });
+export type CapturePauseState = z.infer<typeof zCapturePauseState>;
+
+// ---------------------------------------------------------------------------
+// Days
+// ---------------------------------------------------------------------------
+
+/** Calendar day in the user's time zone. */
+export const zDayDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+export const zDayStatus = z.enum([
+  /** Nothing was captured, or digests are turned off. */
+  "none",
+  /** Conversations exist; the digest is being (re)written. */
+  "pending",
+  "ready",
+  /** No language model, or it failed — the day's conversations are still listed. */
+  "unavailable",
+]);
+export type DayStatus = z.infer<typeof zDayStatus>;
+
+export const zDaySummary = z.object({
+  date: zDayDate,
+  status: zDayStatus,
+  /** One line that names what the day was about. */
+  headline: z.string().nullable(),
+  /** One short paragraph. */
+  summary: z.string().nullable(),
+  conversationCount: z.number().int(),
+  /** Minutes of captured speech (sum of conversation spans). */
+  speechMinutes: z.number(),
+  openActionItems: z.number().int(),
+  updatedAt: zIsoDate.nullable(),
+});
+export type DaySummary = z.infer<typeof zDaySummary>;
+
+export const zDayActionItem = zActionItem.extend({
+  conversationId: zId,
+  conversationTitle: z.string().nullable(),
+});
+export type DayActionItem = z.infer<typeof zDayActionItem>;
+
+export const zDayDetail = zDaySummary.extend({
+  timeZone: z.string(),
+  /** Markdown digest of the whole day. */
+  digest: z.string().nullable(),
+  highlights: z.array(z.string()),
+  decisions: z.array(z.string()),
+  people: z.array(z.string()),
+  /** Conversations that started on this day, oldest first. */
+  conversations: z.array(zConversationSummary),
+  actionItems: z.array(zDayActionItem),
+  statusDetail: z.string().nullable(),
+});
+export type DayDetail = z.infer<typeof zDayDetail>;
+
+export const zDayQuery = zPageQuery.extend({
+  from: zDayDate.optional(),
+  to: zDayDate.optional(),
+});
+
+// ---------------------------------------------------------------------------
 // Live events (SSE)
 // ---------------------------------------------------------------------------
 
@@ -715,5 +857,7 @@ export const zLiveEvent = z.discriminatedUnion("type", [
   z.object({ type: z.literal("conversation_updated"), conversation: zConversationSummary }),
   z.object({ type: z.literal("conversation_deleted"), conversationId: zId }),
   z.object({ type: z.literal("memory_created"), memory: zMemory }),
+  z.object({ type: z.literal("day_updated"), day: zDaySummary }),
+  z.object({ type: z.literal("capture_paused"), ingestPaused: z.boolean() }),
 ]);
 export type LiveEvent = z.infer<typeof zLiveEvent>;

@@ -21,6 +21,7 @@ export interface DeviceRow {
   user_id: string;
   name: string;
   kind: Device["kind"];
+  access: Device["access"];
   platform: string | null;
   app_version: string | null;
   priority: number | null;
@@ -48,6 +49,7 @@ export function deviceDto(d: DeviceRow, online: boolean): Device {
     id: d.id,
     name: d.name,
     kind: d.kind,
+    access: d.access,
     platform: d.platform,
     appVersion: d.app_version,
     priority: d.priority,
@@ -82,6 +84,8 @@ export async function createUser(
     displayName: string;
     locale: Locale;
     role: "owner" | "member";
+    /** Already validated; decides where this user's days begin. */
+    timeZone?: string;
   },
 ): Promise<UserRow> {
   const hash = await hashPassword(input.password);
@@ -108,7 +112,15 @@ export async function createUser(
       )[0]!;
       await q.query(
         "INSERT INTO user_settings (user_id, privacy, pipeline, updated_at) VALUES ($1, $2::jsonb, $3::jsonb, $4)",
-        [id, JSON.stringify(DEFAULT_PRIVACY), JSON.stringify(DEFAULT_PIPELINE), now],
+        [
+          id,
+          JSON.stringify(DEFAULT_PRIVACY),
+          JSON.stringify({
+            ...DEFAULT_PIPELINE,
+            timeZone: input.timeZone ?? DEFAULT_PIPELINE.timeZone,
+          }),
+          now,
+        ],
       );
       return user;
     });

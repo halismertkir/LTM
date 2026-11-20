@@ -2,6 +2,7 @@ import { CONSENT_DOCUMENTS } from "@ltm/protocol";
 import { type Ctx, iso, isoOrNull } from "../context.js";
 import { consentState } from "./consent.js";
 import { conversationDetail } from "./conversations.js";
+import { dayDetail } from "./days.js";
 import { type MemoryRow, memoryDto } from "./memories.js";
 import { effectiveProviders, getPipeline, getPrivacy, providerConfigDto } from "./settings.js";
 import { type DeviceRow, deviceDto, type UserRow, userDto } from "./users.js";
@@ -15,7 +16,7 @@ const PAGE = 50;
 export async function* exportUserData(ctx: Ctx, user: UserRow): AsyncGenerator<string> {
   const q = ctx.db;
   const devices = await q.query<DeviceRow>(
-    "SELECT id, user_id, name, kind, platform, app_version, priority, created_at, last_seen_at FROM devices WHERE user_id = $1 ORDER BY created_at",
+    "SELECT id, user_id, name, kind, access, platform, app_version, priority, created_at, last_seen_at FROM devices WHERE user_id = $1 ORDER BY created_at",
     [user.id],
   );
   const providers = await effectiveProviders(ctx, q, user);
@@ -98,6 +99,21 @@ export async function* exportUserData(ctx: Ctx, user: UserRow): AsyncGenerator<s
     [user.id],
   );
   yield `\n  ],\n  "memories": ${JSON.stringify(memories.map(memoryDto))},\n`;
+  const days = await q.query<{ date: string }>(
+    "SELECT DISTINCT local_date AS date FROM conversations WHERE user_id = $1 AND local_date IS NOT NULL ORDER BY 1",
+    [user.id],
+  );
+  yield `  "days": [`;
+  let firstDay = true;
+  for (const { date } of days) {
+    const d = await dayDetail(ctx, user.id, date);
+    if (!d) continue;
+    // Conversations are exported in full above; reference them by id here.
+    const { conversations, ...rest } = d;
+    yield `${firstDay ? "\n" : ",\n"}    ${JSON.stringify({ ...rest, conversationIds: conversations.map((c) => c.id) })}`;
+    firstDay = false;
+  }
+  yield "\n  ],\n";
   const audio = await q.query<Record<string, unknown>>(
     "SELECT id, stream_id, kind, seq, mime_type, size_bytes, start_ms, duration_ms, status, path IS NOT NULL AS stored FROM audio_chunks WHERE user_id = $1 ORDER BY start_ms",
     [user.id],

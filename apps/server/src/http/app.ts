@@ -4,7 +4,14 @@ import fastifyCookie from "@fastify/cookie";
 import fastifyMultipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
-import { API_PREFIX, MAX_CHUNK_BYTES, SESSION_COOKIE } from "@ltm/protocol";
+import {
+  API_PREFIX,
+  DEVICE_ROUTES,
+  type DeviceAccess,
+  MAX_CHUNK_BYTES,
+  ROUTES,
+  SESSION_COOKIE,
+} from "@ltm/protocol";
 import Fastify, {
   type FastifyBaseLogger,
   type FastifyInstance,
@@ -18,18 +25,17 @@ import { type Access, requestOrigin, sendError } from "./plumbing.js";
 import { authRoutes } from "./routes/auth.js";
 import { consentRoutes } from "./routes/consent.js";
 import { dataRoutes } from "./routes/data.js";
+import { dayRoutes } from "./routes/days.js";
 import { deviceRoutes } from "./routes/devices.js";
 import { ingestRoutes } from "./routes/ingest.js";
 import { memoryRoutes } from "./routes/memory.js";
 import { settingsRoutes } from "./routes/settings.js";
 
-/** Routes a device token may call (rest.ts header comment). */
-const DEVICE_ALLOWED: RegExp[] = [
-  /^\/me$/,
-  /^\/consents(\/|$)/,
-  /^\/ingest\//,
-  /^\/devices\/self$/,
-];
+/** `METHOD /api/v1/pattern` keys a device of each access level may call (DEVICE_ROUTES). */
+const DEVICE_ALLOWED: Record<DeviceAccess, Set<string>> = {
+  capture: new Set(DEVICE_ROUTES.capture.map((r) => `${r.method} ${API_PREFIX}${ROUTES[r.route]}`)),
+  memory: new Set(DEVICE_ROUTES.memory.map((r) => `${r.method} ${API_PREFIX}${ROUTES[r.route]}`)),
+};
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
@@ -82,6 +88,10 @@ export async function buildApp(ctx: Ctx, opts: AppOptions): Promise<FastifyInsta
     loggerInstance: ctx.log as unknown as FastifyBaseLogger,
     trustProxy: ctx.config.trustProxy,
     bodyLimit: JSON_BODY_LIMIT,
+    // No whole-request deadline: /ask may wait minutes for a local model (the provider
+    // timeout bounds it) and /events is a long-lived stream.
+    requestTimeout: 0,
+    connectionTimeout: 0,
     // Request ids only; the default serializer would log full URLs (search queries) and headers.
     genReqId: () => Math.random().toString(36).slice(2, 10),
   });
@@ -165,10 +175,14 @@ export async function buildApp(ctx: Ctx, opts: AppOptions): Promise<FastifyInsta
     if (access === "public") return;
     const p = req.principal;
     if (!p) throw unauthorized();
-    const path = (req.routeOptions.url ?? req.url).slice(API_PREFIX.length);
     if (p.type === "device") {
-      if (access === "user" || !DEVICE_ALLOWED.some((re) => re.test(path))) {
-        throw forbidden("Device tokens may not call this endpoint.");
+      const method = req.method === "HEAD" ? "GET" : req.method;
+      if (!DEVICE_ALLOWED[p.device.access].has(`${method} ${req.routeOptions.url}`)) {
+        throw forbidden(
+          p.device.access === "capture"
+            ? "This device may only capture; pair it with memory access to read the memory."
+            : "Device tokens may not call this endpoint.",
+        );
       }
     } else if (access === "device") {
       throw forbidden("This endpoint needs a device token (pair the device first).");
@@ -216,12 +230,12 @@ export async function buildApp(ctx: Ctx, opts: AppOptions): Promise<FastifyInsta
       await consentRoutes(api, ctx);
       await ingestRoutes(api, ctx, opts.ws);
       await memoryRoutes(api, ctx);
+      await dayRoutes(api, ctx);
       await settingsRoutes(api, ctx);
       await dataRoutes(api, ctx);
     },
     { prefix: API_PREFIX },
   );
-
   const webDir = ctx.config.webDir;
   const hasWeb = webDir !== null && existsSync(join(webDir, "index.html"));
   if (hasWeb) {
@@ -236,5 +250,16 @@ export async function buildApp(ctx: Ctx, opts: AppOptions): Promise<FastifyInsta
     return sendError(reply, new ApiError(404, "not_found", "Not found."));
   });
 
+  await app.ready();
+  // The allow-list names routes by ROUTES key; make sure every entry is a registered route
+  // so a renamed path can never silently lock out (or open up) a device.
+  for (const level of Object.keys(DEVICE_ROUTES) as DeviceAccess[]) {
+    for (const r of DEVICE_ROUTES[level]) {
+      const url = `${API_PREFIX}${ROUTES[r.route]}`;
+      if (!app.hasRoute({ method: r.method as "GET", url })) {
+        throw new Error(`DEVICE_ROUTES.${level} lists ${r.method} ${url}, which is not registered`);
+      }
+    }
+  }
   return app;
 }

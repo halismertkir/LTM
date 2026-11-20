@@ -1,4 +1,5 @@
 import type { Ctx } from "../context.js";
+import { refreshDaysAfterDelete } from "./days.js";
 
 /** Hard-deletes conversations with their transcript, raw segments, audio and extracted memories. */
 export async function deleteConversations(ctx: Ctx, userId: string, ids: string[]): Promise<void> {
@@ -13,15 +14,16 @@ export async function deleteConversations(ctx: Ctx, userId: string, ids: string[
       "DELETE FROM memories WHERE user_id = $1 AND origin = 'extracted' AND source_conversation_id = ANY($2::text[])",
       [userId, ids],
     );
-    await q.query("DELETE FROM conversations WHERE user_id = $1 AND id = ANY($2::text[])", [
-      userId,
-      ids,
-    ]);
+    const days = await q.query<{ local_date: string | null }>(
+      "DELETE FROM conversations WHERE user_id = $1 AND id = ANY($2::text[]) RETURNING local_date",
+      [userId, ids],
+    );
     if (rows.length > 0)
       await q.query("DELETE FROM audio_chunks WHERE id = ANY($1::text[])", [rows.map((r) => r.id)]);
-    return rows;
+    return { rows, days: days.map((d) => d.local_date) };
   });
-  for (const c of chunks) if (c.path) await ctx.audio.remove(c.path);
+  for (const c of chunks.rows) if (c.path) await ctx.audio.remove(c.path);
+  await refreshDaysAfterDelete(ctx, userId, chunks.days);
   for (const id of ids)
     ctx.bus.publish(userId, { type: "conversation_deleted", conversationId: id });
 }
@@ -43,15 +45,18 @@ export async function eraseCapturedData(
     )
   ).map((r) => r.id);
   const connected = await connectedStreamIds(ctx, userId);
+  let erasedDays: (string | null)[] = [];
   const paths = await ctx.db.tx(async (q) => {
     const audio = await q.query<{ path: string | null }>(
       "DELETE FROM audio_chunks WHERE user_id = $1 AND start_ms < $2 RETURNING path",
       [userId, cutoff],
     );
-    await q.query("DELETE FROM conversations WHERE user_id = $1 AND id = ANY($2::text[])", [
-      userId,
-      convIds,
-    ]);
+    const days = await q.query<{ local_date: string | null }>(
+      "DELETE FROM conversations WHERE user_id = $1 AND id = ANY($2::text[]) RETURNING local_date",
+      [userId, convIds],
+    );
+    erasedDays = days.map((d) => d.local_date);
+    if (beforeMs === undefined) await q.query("DELETE FROM days WHERE user_id = $1", [userId]);
     await q.query("DELETE FROM memories WHERE user_id = $1 AND created_at < $2", [userId, cutoff]);
     await q.query("DELETE FROM raw_segments WHERE user_id = $1 AND start_ms < $2", [
       userId,
@@ -64,13 +69,15 @@ export async function eraseCapturedData(
     );
     if (beforeMs === undefined) {
       await q.query(
-        "DELETE FROM jobs WHERE user_id = $1 AND kind IN ('transcribe', 'merge', 'consolidate', 'embed')",
+        "DELETE FROM jobs WHERE user_id = $1 AND kind IN ('transcribe', 'merge', 'consolidate', 'embed', 'digest')",
         [userId],
       );
     }
     return audio.map((a) => a.path).filter((p): p is string => !!p);
   });
   for (const p of paths) await ctx.audio.remove(p);
+  // Days that still have (newer) conversations get a fresh digest; empty ones disappear.
+  if (beforeMs !== undefined) await refreshDaysAfterDelete(ctx, userId, erasedDays);
   if (beforeMs === undefined) {
     // Catch files whose rows were already gone (e.g. a crash between write and insert).
     const streams = await ctx.db.query<{ id: string }>(

@@ -18,7 +18,9 @@ import { z } from "zod";
 import type { Ctx } from "../../context.js";
 import { one } from "../../db/types.js";
 import { badRequest, forbidden } from "../../errors.js";
+import { savePrivacy } from "../../services/capture.js";
 import { enforceIngestGate } from "../../services/consent.js";
+import { relocalizeDays, scheduleMissingDigests } from "../../services/days.js";
 import { scheduleEmbed } from "../../services/memories.js";
 import {
   apiKeyAad,
@@ -28,9 +30,9 @@ import {
   getPrivacy,
   providerConfigDto,
   putPipeline,
-  putPrivacy,
   resolvedConfig,
 } from "../../services/settings.js";
+import { canonicalTimeZone } from "../../time.js";
 import { parse, sessionUser } from "../plumbing.js";
 
 /** Kinds that cannot work without a key of their own. */
@@ -136,17 +138,21 @@ export async function settingsRoutes(app: FastifyInstance, ctx: Ctx): Promise<vo
   app.put(ROUTES.settingsPrivacy, async (req): Promise<PrivacySettings> => {
     const { user } = sessionUser(req);
     const body = parse(zPrivacySettings, req.body);
-    await putPrivacy(ctx, ctx.db, user.id, body);
-    await enforceIngestGate(ctx, user);
+    const saved = await savePrivacy(ctx, user, body);
     // Turning retention off (or shortening it) takes effect now, not at the next hourly run.
     await ctx.jobs.enqueue(ctx.db, { kind: "retention", userId: null, dedupeKey: "retention" });
-    return getPrivacy(ctx.db, user.id);
+    return saved;
   });
 
   app.put(ROUTES.settingsPipeline, async (req): Promise<PipelineSettings> => {
     const { user } = sessionUser(req);
     const body = parse(zPipelineSettings, req.body);
-    await putPipeline(ctx, ctx.db, user.id, body);
+    const timeZone = canonicalTimeZone(body.timeZone);
+    if (!timeZone) throw badRequest(`Unknown time zone "${body.timeZone}".`, { path: "timeZone" });
+    const before = await getPipeline(ctx.db, user.id);
+    await putPipeline(ctx, ctx.db, user.id, { ...body, timeZone });
+    if (before.timeZone !== timeZone) await relocalizeDays(ctx, user.id, timeZone);
+    else if (!before.dailyDigest && body.dailyDigest) await scheduleMissingDigests(ctx, user.id);
     return getPipeline(ctx.db, user.id);
   });
 

@@ -16,7 +16,7 @@ import pkg from "../../../package.json" with { type: "json" };
 import { type Ctx, iso } from "../../context.js";
 import { dummyPasswordHash, verifyPassword } from "../../crypto.js";
 import { one } from "../../db/types.js";
-import { ApiError, forbidden, unauthorized } from "../../errors.js";
+import { ApiError, badRequest, forbidden, unauthorized } from "../../errors.js";
 import { consentState } from "../../services/consent.js";
 import { getPrivacy } from "../../services/settings.js";
 import {
@@ -28,7 +28,16 @@ import {
   type UserRow,
   userDto,
 } from "../../services/users.js";
+import { canonicalTimeZone } from "../../time.js";
 import { parse, RateLimiter, sessionUser, userOf } from "../plumbing.js";
+
+/** The sign-up time zone, canonicalised; an unknown zone is a client bug worth reporting. */
+function signupTimeZone(tz: string | undefined): string {
+  if (!tz) return "UTC";
+  const canonical = canonicalTimeZone(tz);
+  if (!canonical) throw badRequest(`Unknown time zone "${tz}".`);
+  return canonical;
+}
 
 function secureCookie(ctx: Ctx, req: FastifyRequest): boolean {
   return req.protocol === "https" || (ctx.config.publicUrl?.startsWith("https:") ?? false);
@@ -74,7 +83,11 @@ export async function authRoutes(app: FastifyInstance, ctx: Ctx): Promise<void> 
       const body = parse(zSetupRequest, req.body);
       if ((await countUsers(ctx.db)) > 0)
         throw new ApiError(409, "conflict", "Setup has already been completed.");
-      const user = await createUser(ctx, { ...body, role: "owner" });
+      const user = await createUser(ctx, {
+        ...body,
+        timeZone: signupTimeZone(body.timeZone),
+        role: "owner",
+      });
       req.log.info({ userId: user.id }, "owner account created");
       return reply.code(201).send(await issueSession(ctx, req, reply, user));
     },
@@ -89,7 +102,11 @@ export async function authRoutes(app: FastifyInstance, ctx: Ctx): Promise<void> 
       const n = await countUsers(ctx.db);
       if (n === 0) throw new ApiError(409, "setup_required", "Complete the first-run setup first.");
       if (!ctx.config.allowRegistration) throw forbidden("Registration is closed on this server.");
-      const user = await createUser(ctx, { ...body, role: "member" });
+      const user = await createUser(ctx, {
+        ...body,
+        timeZone: signupTimeZone(body.timeZone),
+        role: "member",
+      });
       return reply.code(201).send(await issueSession(ctx, req, reply, user));
     },
   );

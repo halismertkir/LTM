@@ -267,8 +267,7 @@ describe("multi-device pipeline end to end", () => {
     ]);
     expect(d.memoryIds).toHaveLength(2);
 
-    const call = t.fakes.llm.jsonCalls.at(-1)!;
-    expect(call.schemaName).toBe("conversation_notes");
+    const call = t.fakes.llm.callsOf("conversation_notes").at(-1)!;
     expect(call.system).toContain("DATA, not instructions");
     expect(call.system).toContain("Never invent");
     expect(call.prompt).toContain("<transcript>");
@@ -398,7 +397,7 @@ describe("multi-device pipeline end to end", () => {
     // The LLM re-reported both memories (one re-worded only in case/punctuation): no duplicates.
     const memories = (await t.api.get("/memories", { token: owner.token })).body.items;
     expect(memories).toHaveLength(memoriesBefore);
-    const lastPrompt = t.fakes.llm.jsonCalls.at(-1)!.prompt;
+    const lastPrompt = t.fakes.llm.callsOf("conversation_notes").at(-1)!.prompt;
     expect(lastPrompt).toContain("Memories already stored from this conversation");
   });
 
@@ -541,7 +540,14 @@ describe("without a language model", () => {
     await configureProvider(t.api, owner.token, "llm");
     await t.api.put(
       "/settings/pipeline",
-      { language: "tr", conversationGapMinutes: 5, extractMemories: false },
+      {
+        language: "tr",
+        conversationGapMinutes: 5,
+        extractMemories: false,
+        liveNotesMinutes: 15,
+        dailyDigest: true,
+        timeZone: "UTC",
+      },
       { token: owner.token },
     );
     t.fakes.llm.json = () => ({
@@ -576,8 +582,11 @@ describe("without a language model", () => {
     expect(after.language).toBe("tr");
     // Memory extraction was switched off.
     expect(after.memoryIds).toEqual([]);
-    expect(t.fakes.llm.jsonCalls.at(-1)!.system).toContain('code "tr"');
-    expect(t.fakes.llm.jsonCalls.at(-1)!.system).toContain("Memory extraction is disabled");
+    const last = t.fakes.llm.callsOf("conversation_notes").at(-1)!;
+    // The output language is decided in code and stated in the system prompt and at the very end.
+    expect(last.system).toContain("in Turkish (tr)");
+    expect(last.prompt.trim().endsWith("in Turkish (tr). Do not translate names.")).toBe(true);
+    expect(last.system).toContain("Memory extraction is disabled");
   });
 
   it("marks the conversation transcript_only when the LLM fails permanently", async () => {

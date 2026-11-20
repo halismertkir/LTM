@@ -3,7 +3,14 @@ import { normalizeText } from "@ltm/core";
 import type { Memory, MemoryKind, Page } from "@ltm/protocol";
 import { type Ctx, iso } from "../context.js";
 import { one, type Queryable } from "../db/types.js";
-import { decodeCursor, encodeCursor, likePattern, queryTokens } from "./conversations.js";
+import {
+  decodeCursor,
+  encodeCursor,
+  likePattern,
+  queryTokens,
+  substringPattern,
+  wordColumn,
+} from "./conversations.js";
 
 export interface MemoryRow {
   id: string;
@@ -66,8 +73,10 @@ export async function listMemories(
   }
   if (query.q) {
     for (const t of queryTokens(query.q)) {
-      params.push(likePattern(t));
-      where.push(`(normalized LIKE $${params.length} OR subjects::text ILIKE $${params.length})`);
+      params.push(likePattern(t), substringPattern(t));
+      where.push(
+        `(${wordColumn("normalized")} LIKE $${params.length - 1} OR subjects::text ILIKE $${params.length})`,
+      );
     }
   }
   if (query.cursor) {

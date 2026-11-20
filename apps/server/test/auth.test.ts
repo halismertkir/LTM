@@ -121,7 +121,14 @@ describe("auth, sessions, devices", () => {
       password: PASSWORD,
     });
     const cookie = login.headers.get("set-cookie")!.split(";")[0]!;
-    const body = { language: null, conversationGapMinutes: 7, extractMemories: true };
+    const body = {
+      language: null,
+      conversationGapMinutes: 7,
+      extractMemories: true,
+      liveNotesMinutes: 15,
+      dailyDigest: true,
+      timeZone: "UTC",
+    };
 
     const cross = await t.api.put("/settings/pipeline", body, {
       cookie,

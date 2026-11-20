@@ -3,7 +3,7 @@ import type { EmbeddingProvider } from "@ltm/providers";
 import type { Ctx } from "../context.js";
 import { type Queryable, vectorLiteral } from "../db/types.js";
 import { isProviderError } from "../errors.js";
-import { likePattern, queryTokens } from "./conversations.js";
+import { isSignificant, likePattern, queryTokens, wordColumn } from "./conversations.js";
 
 /** Reciprocal-rank-fusion constant (the usual 60). */
 const RRF_K = 60;
@@ -24,10 +24,34 @@ function snippet(text: string, max = 280): string {
   return t.length <= max ? t : `${t.slice(0, max - 1)}…`;
 }
 
-function tokenScoreSql(column: string, tokens: string[], firstParam: number): string {
-  return tokens
-    .map((_, i) => `(CASE WHEN ${column} LIKE $${firstParam + i} THEN 1 ELSE 0 END)`)
+/** Weight of a short token ("ne", "of"): it refines a match but never makes one. */
+const SHORT_TOKEN_WEIGHT = 0.25;
+
+function tokenWeight(t: string): number {
+  return isSignificant(t) ? 1 : SHORT_TOKEN_WEIGHT;
+}
+
+/**
+ * SQL for (weighted score, number of significant tokens matched). A row is a keyword hit
+ * only when a significant token matches; otherwise the keyword list would hand arbitrary
+ * rows to the rank fusion, and they would outrank genuinely similar vector hits.
+ */
+function tokenScoreSql(
+  column: string,
+  tokens: string[],
+  firstParam: number,
+): { score: string; sig: string } {
+  const col = wordColumn(column);
+  const cases = tokens.map((t, i) => ({ t, sql: `${col} LIKE $${firstParam + i}` }));
+  const score = cases
+    .map((c) => `(CASE WHEN ${c.sql} THEN ${tokenWeight(c.t)} ELSE 0 END)`)
     .join(" + ");
+  const significant = cases.filter((c) => isSignificant(c.t));
+  // A query made only of short words falls back to letting those match.
+  const sig = (significant.length ? significant : cases)
+    .map((c) => `(CASE WHEN ${c.sql} THEN 1 ELSE 0 END)`)
+    .join(" + ");
+  return { score, sig };
 }
 
 function timeFilter(column: string, opts: SearchOptions, params: unknown[]): string {
@@ -55,10 +79,10 @@ async function keyword(
   if (tokens.length === 0) return [];
   const patterns = tokens.map(likePattern);
   const out: Ranked[] = [];
-  const n = tokens.length;
+  const n = tokens.reduce((w, t) => w + tokenWeight(t), 0);
   if (types.includes("memory")) {
     const params: unknown[] = [userId, ...patterns];
-    const score = tokenScoreSql("m.normalized", tokens, 2);
+    const { score, sig } = tokenScoreSql("m.normalized", tokens, 2);
     const tf = timeFilter("m.created_at", opts, params);
     params.push(limit);
     const rows = await q.query<{
@@ -69,9 +93,9 @@ async function keyword(
       created_at: number;
       s: number;
     }>(
-      `SELECT * FROM (SELECT m.id, m.content, m.source_conversation_id, c.title, m.created_at, (${score}) AS s
+      `SELECT * FROM (SELECT m.id, m.content, m.source_conversation_id, c.title, m.created_at, (${score}) AS s, (${sig}) AS g
          FROM memories m LEFT JOIN conversations c ON c.id = m.source_conversation_id
-        WHERE m.user_id = $1 ${tf}) x WHERE s > 0 ORDER BY s DESC, created_at DESC LIMIT $${params.length}`,
+        WHERE m.user_id = $1 ${tf}) x WHERE g > 0 ORDER BY s DESC, created_at DESC LIMIT $${params.length}`,
       params,
     );
     for (const r of rows) {
@@ -88,7 +112,7 @@ async function keyword(
   }
   if (types.includes("conversation")) {
     const params: unknown[] = [userId, ...patterns];
-    const score = tokenScoreSql("c.search_text", tokens, 2);
+    const { score, sig } = tokenScoreSql("c.search_text", tokens, 2);
     const tf = timeFilter("c.start_ms", opts, params);
     params.push(limit);
     const rows = await q.query<{
@@ -98,8 +122,8 @@ async function keyword(
       start_ms: number;
       s: number;
     }>(
-      `SELECT * FROM (SELECT c.id, c.title, c.summary, c.start_ms, (${score}) AS s FROM conversations c
-        WHERE c.user_id = $1 ${tf}) x WHERE s > 0 ORDER BY s DESC, start_ms DESC LIMIT $${params.length}`,
+      `SELECT * FROM (SELECT c.id, c.title, c.summary, c.start_ms, (${score}) AS s, (${sig}) AS g FROM conversations c
+        WHERE c.user_id = $1 ${tf}) x WHERE g > 0 ORDER BY s DESC, start_ms DESC LIMIT $${params.length}`,
       params,
     );
     for (const r of rows) {
@@ -116,7 +140,7 @@ async function keyword(
   }
   if (types.includes("utterance")) {
     const params: unknown[] = [userId, ...patterns];
-    const score = tokenScoreSql("u.search_text", tokens, 2);
+    const { score, sig } = tokenScoreSql("u.search_text", tokens, 2);
     const tf = timeFilter("u.start_ms", opts, params);
     params.push(limit);
     const rows = await q.query<{
@@ -127,9 +151,9 @@ async function keyword(
       start_ms: number;
       s: number;
     }>(
-      `SELECT * FROM (SELECT u.id, u.text, u.conversation_id, c.title, u.start_ms, (${score}) AS s
+      `SELECT * FROM (SELECT u.id, u.text, u.conversation_id, c.title, u.start_ms, (${score}) AS s, (${sig}) AS g
          FROM utterances u JOIN conversations c ON c.id = u.conversation_id
-        WHERE u.user_id = $1 ${tf}) x WHERE s > 0 ORDER BY s DESC, start_ms DESC LIMIT $${params.length}`,
+        WHERE u.user_id = $1 ${tf}) x WHERE g > 0 ORDER BY s DESC, start_ms DESC LIMIT $${params.length}`,
       params,
     );
     for (const r of rows) {
@@ -232,21 +256,25 @@ export async function search(
         .map(({ raw, ...h }) => ({ ...h, score: Math.max(0, Math.min(1, raw)) })),
     };
   }
-  const fused = new Map<string, { hit: Omit<Ranked, "raw">; score: number }>();
-  const addList = (list: Ranked[]) => {
+  // Weighted reciprocal-rank fusion: a keyword hit counts in proportion to how much of the
+  // query it matched, so a row sharing one word with the query cannot outrank the best
+  // semantic match; ties go to the higher cosine similarity.
+  const fused = new Map<string, { hit: Omit<Ranked, "raw">; score: number; sim: number }>();
+  const addList = (list: Ranked[], weighted: boolean, isVector: boolean) => {
     list.forEach((h, rank) => {
       const key = `${h.type}:${h.id}`;
-      const { raw: _raw, ...hit } = h;
-      const entry = fused.get(key) ?? { hit, score: 0 };
-      entry.score += 1 / (RRF_K + rank + 1);
+      const { raw, ...hit } = h;
+      const entry = fused.get(key) ?? { hit, score: 0, sim: -1 };
+      entry.score += (weighted ? Math.max(0, Math.min(1, raw)) : 1) / (RRF_K + rank + 1);
+      if (isVector) entry.sim = raw;
       fused.set(key, entry);
     });
   };
-  addList(kw);
-  addList(vec);
+  addList(kw, true, false);
+  addList(vec, false, true);
   const max = 2 / (RRF_K + 1);
   const hits = [...fused.values()]
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => b.score - a.score || b.sim - a.sim)
     .slice(0, opts.limit)
     .map((e) => ({ ...e.hit, score: Math.min(1, e.score / max) }));
   return { mode: "hybrid", hits };

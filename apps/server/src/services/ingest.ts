@@ -12,6 +12,7 @@ import { type Ctx, iso, isoOrNull } from "../context.js";
 import { sha256Hex } from "../crypto.js";
 import { json, one, type Queryable } from "../db/types.js";
 import { conflict, forbidden } from "../errors.js";
+import { mergeDelayMs } from "../pipeline/merge.js";
 import type { DeviceRow } from "./users.js";
 
 export interface StreamRow {
@@ -148,7 +149,7 @@ export async function scheduleMerge(
   ctx: Ctx,
   q: Queryable,
   userId: string,
-  delayMs = ctx.config.tuning.mergeDebounceMs,
+  delayMs = mergeDelayMs(ctx, userId),
 ): Promise<void> {
   await ctx.jobs.enqueue(q, {
     kind: "merge",

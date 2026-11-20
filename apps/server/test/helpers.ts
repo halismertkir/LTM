@@ -80,14 +80,29 @@ export class FakeLlm implements LlmProvider {
   json: (req: LlmJsonRequest<unknown>) => unknown = () => {
     throw new Error("no json handler");
   };
+  /** Day digests are answered separately so conversation handlers stay simple. */
+  digest: (req: LlmJsonRequest<unknown>) => unknown = (req) => ({
+    headline: `Digest of ${/Day: (\S+)/.exec(req.prompt)?.[1] ?? "?"}`,
+    summary: "A day of conversations.",
+    digest: "## The day\n- Things happened.",
+    highlights: ["Something important"],
+    decisions: [],
+    people: [],
+    language: "en",
+  });
   text: (req: LlmRequest) => string = () => "I could not find that [1].";
+  /** Calls by schema name, e.g. "conversation_notes", "conversation_live_notes", "day_digest". */
+  callsOf(schemaName: string): LlmJsonRequest<unknown>[] {
+    return this.jsonCalls.filter((c) => c.schemaName === schemaName);
+  }
   async complete(req: LlmRequest) {
     this.textCalls.push(req);
     return { text: this.text(req), model: this.model };
   }
   async completeJson<T>(req: LlmJsonRequest<T>) {
     this.jsonCalls.push(req as LlmJsonRequest<unknown>);
-    const value = req.schema.parse(this.json(req as LlmJsonRequest<unknown>));
+    const r = req as LlmJsonRequest<unknown>;
+    const value = req.schema.parse(req.schemaName === "day_digest" ? this.digest(r) : this.json(r));
     return { value, model: this.model };
   }
 }
@@ -95,11 +110,15 @@ export class FakeLlm implements LlmProvider {
 /** Hashed bag of words: texts sharing words get similar vectors. */
 export class FakeEmbedding implements EmbeddingProvider {
   readonly kind = "openai_compatible" as const;
-  readonly model = "fake-embed-32";
+  model = "fake-embed-32";
   calls = 0;
+  /** Hand-made vectors for tests that need exact geometry (return null → hashed default). */
+  vectors: ((text: string) => number[] | null) | null = null;
   async embed(texts: string[]): Promise<number[][]> {
     this.calls++;
     return texts.map((t) => {
+      const fixed = this.vectors?.(t);
+      if (fixed) return fixed;
       const v = new Array(32).fill(0);
       for (const w of t
         .toLowerCase()

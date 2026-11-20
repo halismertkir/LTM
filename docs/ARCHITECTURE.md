@@ -200,3 +200,41 @@ claimed by an in-process worker — no Redis or broker.
 Speaker diarization and voice identification, end-to-end encryption between devices and
 server, multi-tenant billing/organisations (the hosted service), Android and desktop
 capture clients.
+
+## Living with it all day
+
+LTM is meant to be left on. Three things make a long day of listening useful rather than
+one endless transcript:
+
+- **Conversations split themselves** at silences (`conversationGapMinutes`), so the day
+  becomes a list of separate talks.
+- **Live notes.** While a conversation is still going, its title, summary and notes are
+  rewritten every `liveNotesMinutes` minutes of new speech (default 15; 0 turns it off),
+  marked `interim` until the conversation ends and the final pass — including memory
+  extraction — runs. Each rewrite is one language-model call; with a local model that
+  costs nothing but time.
+- **Daily digest.** Every day in the user's `timeZone` gets a digest — headline, short
+  summary, highlights, decisions, people, open action items — rewritten (debounced)
+  whenever one of that day's conversations is consolidated. `GET /days` lists them.
+
+## Device access
+
+Every paired device can capture. A device paired with `access: "memory"` — the owner's
+own phone — can additionally read conversations, days and memories, search, ask
+questions, tick action items, add memories, follow live events and flip the capture kill
+switch (`DEVICE_ROUTES` in `packages/protocol` is the allow-list the server enforces).
+It can never change account, provider, retention or device settings; those need a user
+session in the web app. This is what lets the phone app be a full reader without storing
+the account password.
+
+## Capture clients
+
+| Client | Path | Captures | Notes |
+| --- | --- | --- | --- |
+| Chrome extension | `apps/extension` | Tab audio of meetings, microphone | Runs while Chrome runs. |
+| Web app | `apps/web` | Microphone of whatever device has the page open | No install; needs the page in the foreground. Installable as a PWA. |
+| Capture agent | `apps/agent` | A microphone or any ffmpeg input on Linux, macOS or Windows | Headless daemon for an always-on desk or room microphone. |
+| iPhone / Apple Watch | `apps/apple` | Microphone, in the background | Needs Xcode to build. |
+
+The browser clients share their audio pipeline (AudioWorklet resampler, energy gate,
+wall-clock frame stamping, resumable stream client) through `packages/capture`.

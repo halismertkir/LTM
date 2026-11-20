@@ -12,6 +12,7 @@ import { retentionHandler } from "./pipeline/retention.js";
 import { transcribeHandler } from "./pipeline/transcribe.js";
 import { type JobHandlers, Worker } from "./pipeline/worker.js";
 import { AudioStore } from "./services/audio-store.js";
+import { digestHandler } from "./services/days.js";
 
 export const JOB_HANDLERS: JobHandlers = {
   transcribe: transcribeHandler,
@@ -19,6 +20,7 @@ export const JOB_HANDLERS: JobHandlers = {
   consolidate: consolidateHandler,
   embed: embedHandler,
   retention: retentionHandler,
+  digest: digestHandler,
 };
 
 export interface Server {

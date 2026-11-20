@@ -4,7 +4,7 @@ import { zLanguage } from "@ltm/protocol";
 import type { EmbeddingProvider, LlmProvider } from "@ltm/providers";
 import type { Ctx } from "../context.js";
 import { sha256Hex } from "../crypto.js";
-import { json, type Queryable, vectorLiteral } from "../db/types.js";
+import { json, one, type Queryable, vectorLiteral } from "../db/types.js";
 import { isProviderError } from "../errors.js";
 import {
   type ActionItemRow,
@@ -14,15 +14,20 @@ import {
   getConversationRow,
   type UtteranceRow,
 } from "../services/conversations.js";
+import { scheduleDigest } from "../services/days.js";
 import { insertMemory, type MemoryRow, memoryDto, scheduleEmbed } from "../services/memories.js";
 import { getPipeline, resolveProvidersForUser } from "../services/settings.js";
+import { decideLanguage, dominantLanguage, languageDirective } from "./language.js";
 import { remergeConversation } from "./merge.js";
 import {
   type ConversationNotes,
   formatHeader,
   formatTranscriptLines,
+  liveNotesSystemPrompt,
+  livePrompt,
   notesSystemPrompt,
   type PartNotes,
+  type PreviousNotes,
   partSystemPrompt,
   reduceSystemPrompt,
   splitIntoParts,
@@ -78,14 +83,15 @@ async function generateNotes(
   llm: LlmProvider,
   header: TranscriptHeader,
   lines: string[],
-  opts: { language: string | null; extractMemories: boolean },
+  opts: { language: string; extractMemories: boolean },
   signal: AbortSignal,
+  singlePassSystem = notesSystemPrompt(opts),
 ): Promise<ConversationNotes> {
   const total = lines.reduce((n, l) => n + l.length + 1, 0);
   if (total <= SINGLE_PASS_CHARS) {
     const { value } = await llm.completeJson({
-      system: notesSystemPrompt(opts),
-      prompt: wrapTranscript(formatHeader(header), lines),
+      system: singlePassSystem,
+      prompt: `${wrapTranscript(formatHeader(header), lines)}\n\n${languageDirective(opts.language)}`,
       schema: zConversationNotes,
       schemaName: "conversation_notes",
       maxTokens: 8000,
@@ -98,7 +104,7 @@ async function generateNotes(
   for (let i = 0; i < parts.length; i++) {
     const { value } = await llm.completeJson({
       system: partSystemPrompt(opts),
-      prompt: wrapTranscript(formatHeader(header, { index: i, total: parts.length }), parts[i]!),
+      prompt: `${wrapTranscript(formatHeader(header, { index: i, total: parts.length }), parts[i]!)}\n\n${languageDirective(opts.language)}`,
       schema: zPartNotes,
       schemaName: "conversation_part_notes",
       maxTokens: 6000,
@@ -108,7 +114,7 @@ async function generateNotes(
   }
   const { value } = await llm.completeJson({
     system: reduceSystemPrompt(opts),
-    prompt: `${formatHeader(header)}\n\n<part_notes>\n${JSON.stringify(partNotes, null, 1)}\n</part_notes>`,
+    prompt: `${formatHeader(header)}\n\n<part_notes>\n${JSON.stringify(partNotes, null, 1)}\n</part_notes>\n\n${languageDirective(opts.language)}`,
     schema: zConversationNotes,
     schemaName: "conversation_notes",
     maxTokens: 8000,
@@ -117,12 +123,54 @@ async function generateNotes(
   return value;
 }
 
+/** Words models use for "the account owner" instead of a name (English and Turkish). */
+const SELF_OWNERS = new Set([
+  "self",
+  "me",
+  "i",
+  "myself",
+  "user",
+  "the user",
+  "speaker",
+  "owner",
+  "ben",
+  "kendim",
+  "bana",
+]);
+
+/** What small models write instead of leaving the owner empty. */
+const NO_OWNERS = new Set([
+  "unknown",
+  "none",
+  "null",
+  "n/a",
+  "na",
+  "-",
+  "?",
+  "unassigned",
+  "nobody",
+  "bilinmiyor",
+  "belirsiz",
+  "yok",
+]);
+
+/** The account owner's own tasks carry their display name, never a speaker label. */
+export function normalizeOwner(raw: string | null, displayName: string): string | null {
+  if (!raw) return null;
+  const v = clean(raw, 120);
+  if (!v) return null;
+  const key = v.toLowerCase();
+  if (NO_OWNERS.has(key)) return null;
+  return SELF_OWNERS.has(key) ? displayName : v;
+}
+
 /** Keeps done/edited action items, reuses ids of unchanged ones, replaces the rest. */
 async function reconcileActionItems(
   ctx: Ctx,
   q: Queryable,
   conv: ConversationRow,
   items: ConversationNotes["actionItems"],
+  displayName: string,
 ): Promise<void> {
   const existing = await q.query<ActionItemRow>(
     "SELECT * FROM action_items WHERE conversation_id = $1",
@@ -142,7 +190,7 @@ async function reconcileActionItems(
         "UPDATE action_items SET owner = $2, due = $3, position = $4, updated_at = $5 WHERE id = $1",
         [
           match.id,
-          it.owner ? clean(it.owner, 120) : match.owner,
+          normalizeOwner(it.owner, displayName) ?? match.owner,
           validDate(it.due) ?? match.due,
           position++,
           now,
@@ -160,7 +208,7 @@ async function reconcileActionItems(
         conv.id,
         conv.user_id,
         text,
-        it.owner ? clean(it.owner, 120) : null,
+        normalizeOwner(it.owner, displayName),
         validDate(it.due),
         position++,
         now,
@@ -277,12 +325,32 @@ async function storeMemories(
   return created;
 }
 
+interface Speaker {
+  displayName: string;
+  locale: string;
+}
+
+async function accountOf(ctx: Ctx, userId: string): Promise<Speaker> {
+  const u = await one<{ display_name: string; locale: string }>(
+    ctx.db,
+    "SELECT display_name, locale FROM users WHERE id = $1",
+    [userId],
+  );
+  return { displayName: u?.display_name ?? "", locale: u?.locale ?? "en" };
+}
+
+/** Language spoken in a conversation, weighted by how much was said. */
+function spokenLanguage(utterances: UtteranceRow[]): string | null {
+  return dominantLanguage(utterances.map((u) => ({ language: u.language, weight: u.text.length })));
+}
+
 async function finishWithoutNotes(ctx: Ctx, conv: ConversationRow, detail: string): Promise<void> {
   await ctx.db.query(
-    "UPDATE conversations SET status = 'transcript_only', status_detail = $2, consolidated_revision = revision, updated_at = $3 WHERE id = $1 AND status = 'processing'",
+    "UPDATE conversations SET status = 'transcript_only', status_detail = $2, interim = false, consolidated_revision = revision, updated_at = $3 WHERE id = $1 AND status = 'processing'",
     [conv.id, detail, ctx.clock.now()],
   );
   await scheduleEmbed(ctx, ctx.db, conv.user_id);
+  await scheduleDigest(ctx, ctx.db, conv.user_id, conv.local_date);
   await publishConversation(ctx, conv.user_id, conv.id);
 }
 
@@ -334,7 +402,10 @@ export async function runConsolidate(
     utterances.map((u) => ({ startMs: u.start_ms, speaker: u.speaker, text: u.text })),
     conv.start_ms,
   );
-  const opts = { language: pipeline.language, extractMemories: pipeline.extractMemories };
+  const account = await accountOf(ctx, userId);
+  const spoken = spokenLanguage(utterances);
+  const outLang = decideLanguage({ fixed: pipeline.language, spoken, locale: account.locale });
+  const opts = { language: outLang, extractMemories: pipeline.extractMemories };
   const notes = await generateNotes(llm, header, lines, opts, signal);
 
   const cands: Candidate[] = [];
@@ -358,10 +429,10 @@ export async function runConsolidate(
   }
   await embedCandidates(ctx, embedding, cands, signal);
 
+  // The conversation's language is what was spoken; the model's guess only fills gaps.
   const language =
-    notes.language && zLanguage.safeParse(notes.language).success
-      ? notes.language
-      : (pipeline.language ?? null);
+    spoken ??
+    (notes.language && zLanguage.safeParse(notes.language).success ? notes.language : null);
   const result = await ctx.db.tx(async (q) => {
     // Row lock: a concurrent merge (external PostgreSQL) must not slip in between check and write.
     const fresh = (
@@ -380,7 +451,7 @@ export async function runConsolidate(
     await q.query(
       `UPDATE conversations SET status = 'ready', status_detail = NULL, title = $2, summary = $3, notes = $4,
               decisions = $5::jsonb, participants = $6::jsonb, topics = $7::jsonb, language = $8,
-              consolidated_revision = revision, search_text = $9, updated_at = $10
+              consolidated_revision = revision, search_text = $9, updated_at = $10, interim = false
        WHERE id = $1`,
       [
         conv.id,
@@ -395,9 +466,10 @@ export async function runConsolidate(
         ctx.clock.now(),
       ],
     );
-    await reconcileActionItems(ctx, q, fresh, notes.actionItems);
+    await reconcileActionItems(ctx, q, fresh, notes.actionItems, account.displayName);
     const created = await storeMemories(ctx, q, fresh, cands, embedding?.model ?? null);
     await scheduleEmbed(ctx, q, userId);
+    await scheduleDigest(ctx, q, userId, fresh.local_date);
     return created;
   });
   if (!result) return;
@@ -405,9 +477,142 @@ export async function runConsolidate(
   for (const m of result) ctx.bus.publish(userId, { type: "memory_created", memory: memoryDto(m) });
 }
 
+/** Lines of the previous pass's tail repeated in the next live pass, for continuity. */
+const LIVE_OVERLAP_MS = 30_000;
+
+/**
+ * Interim pass while a conversation is still open: builds on the previous interim notes
+ * plus only the transcript that is new since then, writes notes and action items, never
+ * extracts memories and never changes the status.
+ */
+export async function runLiveNotes(
+  ctx: Ctx,
+  userId: string,
+  conversationId: string,
+  signal: AbortSignal,
+): Promise<void> {
+  const conv = await getConversationRow(ctx.db, userId, conversationId);
+  if (conv?.status !== "open" || conv.live_revision === conv.revision) return;
+  const pipeline = await getPipeline(ctx.db, userId);
+  if (pipeline.liveNotesMinutes <= 0) return;
+  const { llm } = await resolveProvidersForUser(ctx, userId, ["llm"]);
+  // No model: nothing to do while the conversation is open (the final pass reports it).
+  if (!llm) return;
+  const utterances = await ctx.db.query<UtteranceRow>(
+    "SELECT * FROM utterances WHERE conversation_id = $1 ORDER BY start_ms, id",
+    [conv.id],
+  );
+  if (utterances.length === 0) return;
+  const header: TranscriptHeader = {
+    startMs: conv.start_ms,
+    endMs: conv.end_ms,
+    sources: [...new Set(utterances.flatMap((u) => u.sources))],
+    contexts: conv.contexts ?? [],
+    knownMemories: [],
+  };
+  const account = await accountOf(ctx, userId);
+  const spoken = spokenLanguage(utterances);
+  const opts = {
+    language: decideLanguage({ fixed: pipeline.language, spoken, locale: account.locale }),
+    extractMemories: false,
+  };
+  let notes: ConversationNotes;
+  const hasPrevious = conv.interim && (conv.title || conv.summary || conv.notes);
+  let previous: PreviousNotes | null = null;
+  let since = Number.NEGATIVE_INFINITY;
+  if (hasPrevious) {
+    const items = await ctx.db.query<ActionItemRow>(
+      "SELECT * FROM action_items WHERE conversation_id = $1 ORDER BY position",
+      [conv.id],
+    );
+    previous = {
+      title: conv.title,
+      summary: conv.summary,
+      notes: conv.notes,
+      decisions: conv.decisions ?? [],
+      actionItems: items.map((a) => ({ text: a.text, owner: a.owner, due: a.due })),
+      participants: conv.participants ?? [],
+      topics: conv.topics ?? [],
+    };
+    since = (conv.live_until_ms ?? conv.start_ms) - LIVE_OVERLAP_MS;
+  }
+  let lines = formatTranscriptLines(
+    utterances
+      .filter((u) => u.end_ms > since)
+      .map((u) => ({ startMs: u.start_ms, speaker: u.speaker, text: u.text })),
+    conv.start_ms,
+  );
+  let size = lines.reduce((n, l) => n + l.length + 1, 0);
+  if (!previous && size > SINGLE_PASS_CHARS) {
+    // First pass over an already long conversation (e.g. live notes just switched on).
+    notes = await generateNotes(llm, header, lines, opts, signal);
+  } else {
+    // New speech since the last pass is normally small; keep the call bounded regardless.
+    while (size > SINGLE_PASS_CHARS && lines.length > 1) {
+      size -= lines[0]!.length + 1;
+      lines = lines.slice(1);
+    }
+    const { value } = await llm.completeJson({
+      system: liveNotesSystemPrompt(opts),
+      prompt: `${livePrompt(formatHeader(header), previous, lines)}\n\n${languageDirective(opts.language)}`,
+      schema: zConversationNotes,
+      schemaName: "conversation_live_notes",
+      maxTokens: 8000,
+      signal,
+    });
+    notes = value;
+  }
+  const language =
+    spoken ??
+    (notes.language && zLanguage.safeParse(notes.language).success ? notes.language : null);
+  const written = await ctx.db.tx(async (q) => {
+    const fresh = (
+      await q.query<ConversationRow>(
+        "SELECT * FROM conversations WHERE id = $1 AND user_id = $2 FOR UPDATE",
+        [conv.id, userId],
+      )
+    )[0];
+    // Closed meanwhile: the final pass owns the notes now.
+    if (fresh?.status !== "open") return false;
+    const title = fresh.title_edited ? fresh.title : clean(notes.title, 200) || null;
+    const notesMd = fresh.notes_edited ? fresh.notes : notes.notes.trim().slice(0, 100_000) || null;
+    const summary = clean(notes.summary, 4000) || null;
+    const topics = cleanList(notes.topics, 10, 80);
+    const participants = cleanList(notes.participants, 30, 120);
+    await q.query(
+      `UPDATE conversations SET title = $2, summary = $3, notes = $4, decisions = $5::jsonb, participants = $6::jsonb,
+              topics = $7::jsonb, language = $8, search_text = $9, interim = true, live_revision = $10,
+              live_until_ms = $11, live_at = $12, updated_at = $12
+        WHERE id = $1`,
+      [
+        conv.id,
+        title,
+        summary,
+        notesMd,
+        json(cleanList(notes.decisions, 50, 1000)),
+        json(participants),
+        json(topics),
+        language,
+        conversationSearchText({ title, summary, notes: notesMd, topics, participants }),
+        conv.revision,
+        conv.end_ms,
+        ctx.clock.now(),
+      ],
+    );
+    await reconcileActionItems(ctx, q, fresh, notes.actionItems, account.displayName);
+    await scheduleDigest(ctx, q, userId, fresh.local_date);
+    return true;
+  });
+  if (written) await publishConversation(ctx, userId, conv.id);
+}
+
 export const consolidateHandler: JobHandler = {
   async run(ctx, job, signal) {
     if (!job.user_id) return;
+    if (job.payload.interim === true) {
+      await runLiveNotes(ctx, job.user_id, String(job.payload.conversationId ?? ""), signal);
+      return;
+    }
     await runConsolidate(
       ctx,
       job.user_id,
@@ -417,7 +622,8 @@ export const consolidateHandler: JobHandler = {
     );
   },
   async onFailed(ctx, job, err) {
-    if (!job.user_id) return;
+    // A failed interim pass changes nothing: the conversation stays open, the final pass follows.
+    if (!job.user_id || job.payload.interim === true) return;
     const conv = await getConversationRow(
       ctx.db,
       job.user_id,

@@ -38,6 +38,11 @@ export interface ConversationRow {
   consolidated_revision: number | null;
   embedded_revision: number | null;
   search_text: string;
+  interim: boolean;
+  live_revision: number | null;
+  live_until_ms: number | null;
+  live_at: number | null;
+  local_date: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -83,6 +88,7 @@ function summaryDto(r: SummaryRow): ConversationSummary {
     deviceIds: r.device_ids ?? [],
     utteranceCount: r.utterance_count,
     openActionItems: r.open_items ?? 0,
+    interim: r.status === "open" && r.interim,
     updatedAt: iso(r.updated_at),
   };
 }
@@ -107,6 +113,19 @@ export function actionItemDto(a: ActionItemRow): ActionItem {
 
 const SUMMARY_SELECT = `SELECT c.*, (SELECT count(*)::int FROM action_items a WHERE a.conversation_id = c.id AND NOT a.done) AS open_items
   FROM conversations c`;
+
+/** Summaries of the conversations that started on `date` (user's time zone), oldest first. */
+export async function conversationSummariesOfDay(
+  q: Queryable,
+  userId: string,
+  date: string,
+): Promise<ConversationSummary[]> {
+  const rows = await q.query<SummaryRow>(
+    `${SUMMARY_SELECT} WHERE c.user_id = $1 AND c.local_date = $2 ORDER BY c.start_ms, c.id`,
+    [userId, date],
+  );
+  return rows.map(summaryDto);
+}
 
 export async function conversationSummaries(
   q: Queryable,
@@ -192,9 +211,34 @@ export function queryTokens(q: string): string[] {
   return [...new Set(toks)].slice(0, 12);
 }
 
-/** LIKE pattern with the wildcard characters of the token escaped. */
+/** Tokens that can carry a match on their own; short words ("ne", "of") only add to one. */
+export function isSignificant(token: string): boolean {
+  return token.length >= 3 || /\d/.test(token);
+}
+
+function escapeLike(token: string): string {
+  return token.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+/**
+ * Word-level LIKE pattern for a column wrapped with `wordColumn`: significant tokens match
+ * the start of a word (so Turkish suffixes still match: "dişçi" finds "dişçiye"), short
+ * tokens only a whole word. Substring matching made "ne" match "new" and ranked unrelated
+ * rows first.
+ */
 export function likePattern(token: string): string {
-  return `%${token.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  const t = escapeLike(token);
+  return isSignificant(token) ? `% ${t}%` : `% ${t} %`;
+}
+
+/** Plain substring pattern (for fields that are not space-separated, e.g. JSON). */
+export function substringPattern(token: string): string {
+  return `%${escapeLike(token)}%`;
+}
+
+/** Normalised text column padded with spaces so `likePattern` can see word boundaries. */
+export function wordColumn(column: string): string {
+  return `(' ' || ${column} || ' ')`;
 }
 
 export async function listConversations(
@@ -225,7 +269,7 @@ export async function listConversations(
     // Every token must appear in the title/summary/notes or somewhere in the transcript.
     for (const t of queryTokens(query.q)) {
       add(
-        "(c.search_text LIKE ? OR EXISTS (SELECT 1 FROM utterances u WHERE u.conversation_id = c.id AND u.search_text LIKE ?))",
+        `(${wordColumn("c.search_text")} LIKE ? OR EXISTS (SELECT 1 FROM utterances u WHERE u.conversation_id = c.id AND ${wordColumn("u.search_text")} LIKE ?))`,
         likePattern(t),
       );
     }

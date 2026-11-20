@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import {
   type Device,
+  type DeviceAccess,
   type PairingCode,
   type PairResponse,
   ROUTES,
   zDeviceUpdate,
+  zPairingCodeRequest,
   zPairRequest,
 } from "@ltm/protocol";
 import type { FastifyInstance } from "fastify";
@@ -39,7 +41,7 @@ export async function deviceDtoFor(ctx: Ctx, d: DeviceRow): Promise<Device> {
 }
 
 const DEVICE_COLUMNS =
-  "id, user_id, name, kind, platform, app_version, priority, created_at, last_seen_at";
+  "id, user_id, name, kind, access, platform, app_version, priority, created_at, last_seen_at";
 
 export async function deviceRoutes(app: FastifyInstance, ctx: Ctx): Promise<void> {
   // Per client IP, plus a global budget of failed attempts so a distributed guesser is slowed too.
@@ -58,18 +60,20 @@ export async function deviceRoutes(app: FastifyInstance, ctx: Ctx): Promise<void
 
   app.post(ROUTES.devicePairingCodes, async (req, reply): Promise<PairingCode> => {
     const { user } = sessionUser(req);
+    const { access } = parse(zPairingCodeRequest, req.body ?? {});
     const code = newPairingCode();
     const now = ctx.clock.now();
     const expiresAt = now + ctx.config.tuning.pairingCodeTtlMs;
     await ctx.db.query(
-      "INSERT INTO pairing_codes (code_hash, user_id, created_at, expires_at) VALUES ($1, $2, $3, $4)",
-      [sha256Hex(normalizePairingCode(code)), user.id, now, expiresAt],
+      "INSERT INTO pairing_codes (code_hash, user_id, access, created_at, expires_at) VALUES ($1, $2, $3, $4, $5)",
+      [sha256Hex(normalizePairingCode(code)), user.id, access, now, expiresAt],
     );
     const origin = ctx.config.publicUrl ?? requestOrigin(req);
     reply.code(201);
     return {
       code,
       expiresAt: iso(expiresAt),
+      access,
       pairingUri: `ltm://pair?server=${encodeURIComponent(origin)}&code=${encodeURIComponent(code)}`,
     };
   });
@@ -85,9 +89,9 @@ export async function deviceRoutes(app: FastifyInstance, ctx: Ctx): Promise<void
       const token = newToken("device");
       const result = await ctx.db.tx(async (q) => {
         // Deleting first makes the code single-use even under concurrent attempts.
-        const code = await one<{ user_id: string; expires_at: number }>(
+        const code = await one<{ user_id: string; expires_at: number; access: DeviceAccess }>(
           q,
-          "DELETE FROM pairing_codes WHERE code_hash = $1 RETURNING user_id, expires_at",
+          "DELETE FROM pairing_codes WHERE code_hash = $1 RETURNING user_id, expires_at, access",
           [hash],
         );
         if (!code || code.expires_at <= now) return null;
@@ -95,8 +99,8 @@ export async function deviceRoutes(app: FastifyInstance, ctx: Ctx): Promise<void
         if (!user) return null;
         const device = (
           await q.query<DeviceRow>(
-            `INSERT INTO devices (id, user_id, name, kind, platform, app_version, priority, token_hash, created_at, last_seen_at)
-         VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8, $8) RETURNING ${DEVICE_COLUMNS}`,
+            `INSERT INTO devices (id, user_id, name, kind, platform, app_version, priority, token_hash, created_at, last_seen_at, access)
+         VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8, $8, $9) RETURNING ${DEVICE_COLUMNS}`,
             [
               randomUUID(),
               user.id,
@@ -106,6 +110,7 @@ export async function deviceRoutes(app: FastifyInstance, ctx: Ctx): Promise<void
               body.appVersion ?? null,
               sha256Hex(token),
               now,
+              code.access,
             ],
           )
         )[0]!;
@@ -150,6 +155,10 @@ export async function deviceRoutes(app: FastifyInstance, ctx: Ctx): Promise<void
     if (body.priority !== undefined) {
       params.push(body.priority);
       sets.push(`priority = $${params.length}`);
+    }
+    if (body.access !== undefined) {
+      params.push(body.access);
+      sets.push(`access = $${params.length}`);
     }
     const row = sets.length
       ? await one<DeviceRow>(

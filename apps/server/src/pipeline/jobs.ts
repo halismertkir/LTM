@@ -3,7 +3,7 @@ import type { Db, Queryable } from "../db/types.js";
 import { json } from "../db/types.js";
 import type { Clock } from "../deps.js";
 
-export type JobKind = "transcribe" | "merge" | "consolidate" | "embed" | "retention";
+export type JobKind = "transcribe" | "merge" | "consolidate" | "embed" | "retention" | "digest";
 
 export interface EnqueueOptions {
   kind: JobKind;
