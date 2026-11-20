@@ -31,7 +31,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - run: swift --version
       - name: swift test
         working-directory: apps/apple/LTMKit
@@ -47,7 +47,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - run: brew install xcodegen
       - run: xcodebuild -version
       - name: Generate the Xcode project
