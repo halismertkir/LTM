@@ -14,7 +14,7 @@ import { ConfirmDialog, Dialog } from "../../components/Dialog";
 import { useToast } from "../../components/Toast";
 import { ErrorNote, Loading, Switch } from "../../components/ui";
 import { useI18n } from "../../i18n";
-import { formatDateTime } from "../../lib/format";
+import { useFmt } from "../../lib/useFmt";
 import { ConsentDocBody } from "../Consent";
 
 function RetentionForm({ privacy }: { privacy: PrivacySettings }) {
@@ -122,6 +122,7 @@ function RetentionForm({ privacy }: { privacy: PrivacySettings }) {
 
 function ConsentRecords() {
   const { t, locale } = useI18n();
+  const fmt = useFmt();
   const me = useMeData();
   const qc = useQueryClient();
   const toast = useToast();
@@ -204,7 +205,7 @@ function ConsentRecords() {
                 <tr key={`${r.type}-${r.version}-${r.acceptedAt}`}>
                   <td>{docTitle(r.type)}</td>
                   <td>{r.version}</td>
-                  <td>{formatDateTime(Date.parse(r.acceptedAt), locale)}</td>
+                  <td>{fmt.dateTime(Date.parse(r.acceptedAt))}</td>
                   <td>{r.via ?? "—"}</td>
                   <td className="td-actions">
                     {latestByType.get(r.type) === r.acceptedAt && (

@@ -23,12 +23,16 @@ import {
   zAskResponse,
   zAuthResponse,
   zAuthStatus,
+  zCapturePause,
+  zCapturePauseState,
   zConsentAccept,
   zConsentState,
   zConsentWithdraw,
   zConversationDetail,
   zConversationSummary,
   zConversationUpdate,
+  zDayDetail,
+  zDaySummary,
   zDeleteAccountRequest,
   zDeleteDataRequest,
   zDevice,
@@ -39,8 +43,12 @@ import {
   zMemory,
   zMemoryCreate,
   zMemoryUpdate,
+  zMeUpdate,
   zPage,
   zPairingCode,
+  zPairingCodeRequest,
+  zPairRequest,
+  zPairResponse,
   zPipelineSettings,
   zPrivacySettings,
   zProviderCatalog,
@@ -55,7 +63,7 @@ import {
   zStreamInfo,
 } from "@ltm/protocol";
 import { z } from "zod";
-import { createFixtures, type FixtureSet } from "./fixtures";
+import { buildDay, createFixtures, type FixtureSet, listDays } from "./fixtures";
 
 export interface MockResponse {
   status: number;
@@ -88,6 +96,10 @@ export class MockApi {
   session: boolean;
   accepted: { type: ConsentType; version: string; acceptedAt: string; via: string | null }[] = [];
   ingestPaused = false;
+  /** Pairing codes handed out and not yet used, with the access they grant. */
+  codes = new Map<string, "capture" | "memory">();
+  /** Device tokens issued by `/devices/pair` (the web app pairing itself). */
+  deviceTokens = new Map<string, string>();
   /** Every request the UI made, for assertions. */
   log: { method: string; path: string; body: unknown }[] = [];
 
@@ -195,6 +207,9 @@ export class MockApi {
       });
     }
     if (live) events.push({ type: "conversation_updated", conversation: summary(live) });
+    const today = listDays(this.fx)[0];
+    if (today)
+      events.push({ type: "day_updated", day: zDaySummary.parse(buildDay(this.fx, today)) });
     return events.map((e) => zLiveEvent.parse(e));
   }
 
@@ -244,6 +259,7 @@ export class MockApi {
         locale: req.locale,
         createdAt: new Date(this.fx.now).toISOString(),
       };
+      if (req.timeZone) this.fx.settings.pipeline.timeZone = req.timeZone;
       this.session = true;
       return ok(zAuthResponse, {
         user: this.user,
@@ -262,6 +278,36 @@ export class MockApi {
         expiresAt: new Date(this.fx.now + 30 * 86400_000).toISOString(),
       });
     }
+    if (method === "POST" && path === "/devices/pair") {
+      const req = zPairRequest.parse(body);
+      const access = this.codes.get(req.code);
+      if (!access) return err(401, "unauthorized", "unknown or expired pairing code");
+      this.codes.delete(req.code);
+      const device = zDevice.parse({
+        id: `dev-${this.fx.devices.length + 1}-${req.kind}`,
+        name: req.name,
+        kind: req.kind,
+        access,
+        platform: req.platform ?? null,
+        appVersion: req.appVersion ?? null,
+        priority: null,
+        createdAt: new Date().toISOString(),
+        lastSeenAt: null,
+        online: false,
+      });
+      this.fx.devices.push(device);
+      const token = `ltm_dev_mock_${device.id}_0123456789abcdef`;
+      this.deviceTokens.set(token, device.id);
+      return ok(zPairResponse, {
+        device,
+        token,
+        user: {
+          id: this.user?.id ?? "user-1",
+          displayName: this.user?.displayName ?? "",
+          locale: this.user?.locale ?? "en",
+        },
+      });
+    }
     if (method === "GET" && path === "/version")
       return { status: 200, json: { name: "ltm", version: "0.1.0", protocol: 1 } };
 
@@ -273,6 +319,17 @@ export class MockApi {
       return { status: 204 };
     }
     if (method === "GET" && path === "/me") return ok(zMe, this.me());
+    if (method === "PATCH" && path === "/me") {
+      const req = zMeUpdate.parse(body);
+      this.user = { ...this.user, ...req };
+      return ok(zMe, this.me());
+    }
+    if (method === "POST" && path === "/capture/pause") {
+      const req = zCapturePause.parse(body);
+      this.ingestPaused = req.paused;
+      this.fx.settings.privacy.ingestPaused = req.paused;
+      return ok(zCapturePauseState, { ingestPaused: req.paused });
+    }
 
     // --- consent
     if (method === "GET" && path === "/consents") return ok(zConsentState, this.consentState());
@@ -296,13 +353,18 @@ export class MockApi {
     // --- devices
     if (method === "GET" && path === "/devices") return ok(z.array(zDevice), this.fx.devices);
     if (method === "POST" && path === "/devices/pairing-codes") {
+      const req = zPairingCodeRequest.parse(body ?? {});
+      // Stable codes keep screenshots comparable; the access level picks which one.
+      const code = req.access === "memory" ? "M3RV-8QPA" : "K7QF-2MXD";
+      this.codes.set(code, req.access);
       return ok(zPairingCode, {
-        code: "K7QF-2MXD",
+        code,
+        access: req.access,
         expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
-        pairingUri: "ltm://pair?server=https%3A%2F%2Fltm.example.test&code=K7QF-2MXD",
+        pairingUri: `ltm://pair?server=https%3A%2F%2Fltm.example.test&code=${code}`,
       });
     }
-    let p = m("/devices/:id");
+    let p: Record<string, string> | null = m("/devices/:id");
     if (p) {
       const idx = this.fx.devices.findIndex((d) => d.id === p?.id);
       if (idx < 0) return err(404, "not_found", "no such device");
@@ -316,6 +378,37 @@ export class MockApi {
         this.fx.devices.splice(idx, 1);
         return { status: 204 };
       }
+    }
+
+    // --- days
+    if (method === "GET" && path === "/days") {
+      const limit = Number(q.get("limit") ?? 50);
+      const offset = Number(q.get("cursor") ?? 0);
+      const from = q.get("from");
+      const to = q.get("to");
+      const all = listDays(this.fx).filter((d) => (!from || d >= from) && (!to || d <= to));
+      const items = all
+        .slice(offset, offset + limit)
+        .map((d) => zDaySummary.parse(buildDay(this.fx, d)));
+      return ok(zPage(zDaySummary), {
+        items,
+        nextCursor: offset + limit < all.length ? String(offset + limit) : null,
+      });
+    }
+    p = m("/days/:date/regenerate");
+    if (p && method === "POST") {
+      const d = this.fx.digests[p.date ?? ""];
+      if (d) d.status = "pending";
+      return { status: 202 };
+    }
+    p = m("/days/:date");
+    if (p && method === "GET") {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(p.date ?? "")) return err(400, "bad_request", "bad date");
+      const day = buildDay(this.fx, p.date!);
+      // Like the server: a day on which nothing was captured does not exist.
+      if (day.conversationCount === 0)
+        return err(404, "not_found", "Nothing was captured on this day.");
+      return ok(zDayDetail, day);
     }
 
     // --- conversations

@@ -8,10 +8,12 @@ import { IconDownload, IconTrash } from "../../components/Icons";
 import { useToast } from "../../components/Toast";
 import { ErrorNote } from "../../components/ui";
 import { useI18n } from "../../i18n";
-import { dateInputToMs, formatDate } from "../../lib/format";
+import { dateInputToMs } from "../../lib/format";
+import { useFmt } from "../../lib/useFmt";
 
 export function DataSettings() {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
+  const fmt = useFmt();
   const qc = useQueryClient();
   const toast = useToast();
   const session = useSession();
@@ -20,7 +22,7 @@ export function DataSettings() {
   const [confirmAccount, setConfirmAccount] = useState(false);
   const [password, setPassword] = useState("");
   const ids = { before: useId(), password: useId() };
-  const beforeMs = dateInputToMs(before);
+  const beforeMs = dateInputToMs(before, false, fmt.tz);
 
   const deleteData = useMutation({
     mutationFn: () => api.deleteData({ confirm: "DELETE", beforeMs }),
@@ -71,9 +73,7 @@ export function DataSettings() {
         <div className="row">
           <button type="button" className="btn btn-danger" onClick={() => setConfirmData(true)}>
             <IconTrash size={16} />{" "}
-            {beforeMs
-              ? t("data.deleteBefore", { date: formatDate(beforeMs, locale) })
-              : t("data.deleteAll")}
+            {beforeMs ? t("data.deleteBefore", { date: fmt.date(beforeMs) }) : t("data.deleteAll")}
           </button>
         </div>
       </section>
@@ -96,9 +96,7 @@ export function DataSettings() {
         danger
         title={t("data.deleteData")}
         body={
-          beforeMs
-            ? t("data.confirmBefore", { date: formatDate(beforeMs, locale) })
-            : t("data.confirmAll")
+          beforeMs ? t("data.confirmBefore", { date: fmt.date(beforeMs) }) : t("data.confirmAll")
         }
         confirmLabel={t("common.delete")}
         typeToConfirm="DELETE"

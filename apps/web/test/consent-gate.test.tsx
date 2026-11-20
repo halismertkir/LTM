@@ -15,7 +15,7 @@ describe("consent gate", () => {
       await screen.findByRole("heading", { level: 1, name: "Before LTM listens" }),
     ).toBeTruthy();
     // The timeline is not rendered behind the gate.
-    expect(screen.queryByRole("heading", { name: "Timeline", level: 1 })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Days", level: 1 })).toBeNull();
     // Capture state says "blocked" everywhere.
     expect(screen.getAllByText("Capture blocked").length).toBeGreaterThan(0);
 
@@ -37,7 +37,7 @@ describe("consent gate", () => {
     expect((submit as HTMLButtonElement).disabled).toBe(false);
     await user.click(submit);
 
-    expect(await screen.findByRole("heading", { level: 1, name: "Timeline" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { level: 1, name: "Days" })).toBeTruthy();
     const post = api.log.find((r) => r.method === "POST" && r.path === "/consents");
     expect(post?.body).toEqual({
       accept: required.map((d) => ({ type: d.type, version: d.version })),

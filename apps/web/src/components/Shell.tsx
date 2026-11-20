@@ -1,29 +1,76 @@
-import { useEffect } from "react";
-import { NavLink, Outlet, useLocation } from "react-router";
+import { type FormEvent, useEffect, useId, useState } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { useMeData } from "../api/queries";
 import { useSession } from "../api/session";
 import { type MessageKey, useI18n } from "../i18n";
+import { useSwitchLocale } from "../lib/locale";
 import { type ThemeMode, useTheme } from "../lib/theme";
 import { CaptureStatus } from "./CaptureStatus";
 import {
   IconAuto,
+  IconCalendar,
   IconDevices,
   IconLogout,
   IconMemory,
   IconMoon,
-  IconSearch,
+  IconMore,
   IconSettings,
+  IconSparkle,
   IconSun,
   IconTimeline,
 } from "./Icons";
 
-const NAV: { to: string; key: MessageKey; icon: typeof IconTimeline; end?: boolean }[] = [
-  { to: "/", key: "nav.timeline", icon: IconTimeline, end: true },
+type NavItem = { to: string; key: MessageKey; icon: typeof IconTimeline; end?: boolean };
+const NAV: NavItem[] = [
+  { to: "/", key: "nav.days", icon: IconCalendar, end: true },
+  { to: "/timeline", key: "nav.timeline", icon: IconTimeline },
+  { to: "/ask", key: "nav.ask", icon: IconSparkle },
   { to: "/memories", key: "nav.memories", icon: IconMemory },
-  { to: "/search", key: "nav.search", icon: IconSearch },
   { to: "/devices", key: "nav.devices", icon: IconDevices },
   { to: "/settings", key: "nav.settings", icon: IconSettings },
 ];
+// The phone bar keeps five thumb-sized targets; Devices and Settings live under "More".
+const PHONE_NAV: NavItem[] = [
+  { to: "/", key: "nav.days", icon: IconCalendar, end: true },
+  { to: "/timeline", key: "nav.timeline", icon: IconTimeline },
+  { to: "/ask", key: "nav.ask", icon: IconSparkle },
+  { to: "/memories", key: "nav.memories", icon: IconMemory },
+  { to: "/more", key: "nav.more", icon: IconMore },
+];
+
+/** The "ask your memory" field in the sidebar: routes to the Ask page with the question running. */
+function AskBox() {
+  const { t } = useI18n();
+  const navigate = useNavigate();
+  const [q, setQ] = useState("");
+  const id = useId();
+  const onSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    const question = q.trim();
+    if (!question) return;
+    setQ("");
+    navigate(`/ask?q=${encodeURIComponent(question)}`);
+  };
+  return (
+    <search className="askbox">
+      <form onSubmit={onSubmit}>
+        <label htmlFor={id} className="sr-only">
+          {t("ask.boxLabel")}
+        </label>
+        <IconSparkle size={16} />
+        <input
+          id={id}
+          type="search"
+          enterKeyHint="send"
+          placeholder={t("ask.boxPlaceholder")}
+          value={q}
+          maxLength={2000}
+          onChange={(e) => setQ(e.target.value)}
+        />
+      </form>
+    </search>
+  );
+}
 
 const NEXT_THEME: Record<ThemeMode, ThemeMode> = { system: "light", light: "dark", dark: "system" };
 const THEME_KEY: Record<ThemeMode, MessageKey> = {
@@ -31,6 +78,8 @@ const THEME_KEY: Record<ThemeMode, MessageKey> = {
   light: "prefs.themeLight",
   dark: "prefs.themeDark",
 };
+
+export { NEXT_THEME, THEME_KEY };
 
 export function Wordmark() {
   return (
@@ -44,7 +93,8 @@ export function Wordmark() {
 }
 
 function Prefs({ showLogout }: { showLogout: boolean }) {
-  const { t, locale, setLocale } = useI18n();
+  const { t, locale } = useI18n();
+  const switchLocale = useSwitchLocale();
   const [theme, setTheme] = useTheme();
   const session = useSession();
   const ThemeIcon = theme === "light" ? IconSun : theme === "dark" ? IconMoon : IconAuto;
@@ -63,7 +113,7 @@ function Prefs({ showLogout }: { showLogout: boolean }) {
       <button
         type="button"
         className="icon-btn lang-btn"
-        onClick={() => setLocale(locale === "en" ? "tr" : "en")}
+        onClick={() => switchLocale(locale === "en" ? "tr" : "en")}
         aria-label={t("prefs.language")}
         title={t("prefs.language")}
       >
@@ -110,6 +160,7 @@ export function Shell() {
           <span className="sidebar-tag">{t("brand.tagline")}</span>
         </div>
         <CaptureStatus />
+        <AskBox />
         <nav aria-label={t("nav.main")} className="side-nav">
           {NAV.map(({ to, key, icon: Icon, end }) => (
             <NavLink key={to} to={to} end={end} className="side-link">
@@ -135,7 +186,7 @@ export function Shell() {
       <header className="topbar">
         <Wordmark />
         <CaptureStatus compact />
-        <Prefs showLogout />
+        <Prefs showLogout={false} />
       </header>
 
       <main id="main" className="main">
@@ -143,7 +194,7 @@ export function Shell() {
       </main>
 
       <nav aria-label={t("nav.main")} className="bottom-nav">
-        {NAV.map(({ to, key, icon: Icon, end }) => (
+        {PHONE_NAV.map(({ to, key, icon: Icon, end }) => (
           <NavLink key={to} to={to} end={end} className="bottom-link">
             <Icon size={20} />
             <span>{t(key)}</span>

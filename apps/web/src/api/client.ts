@@ -12,6 +12,9 @@ import type {
   MemoryCreate,
   MemoryKind,
   MemoryUpdate,
+  MeUpdate,
+  PairingCodeRequest,
+  PairRequest,
   PipelineSettings,
   PrivacySettings,
   ProviderConfigInput,
@@ -27,15 +30,19 @@ import {
   zAskResponse,
   zAuthResponse,
   zAuthStatus,
+  zCapturePauseState,
   zConsentState,
   zConversationDetail,
   zConversationSummary,
+  zDayDetail,
+  zDaySummary,
   zDevice,
   zErrorResponse,
   zMe,
   zMemory,
   zPage,
   zPairingCode,
+  zPairResponse,
   zPipelineSettings,
   zPrivacySettings,
   zProviderCatalog,
@@ -197,6 +204,14 @@ const zDeviceList = z.array(zDevice);
 const zStreamList = z.array(zStreamInfo);
 const zConversationPage = zPage(zConversationSummary);
 const zMemoryPage = zPage(zMemory);
+const zDayPage = zPage(zDaySummary);
+
+export interface DayListQuery {
+  from?: string;
+  to?: string;
+  limit?: number;
+  cursor?: string;
+}
 
 export interface ConversationListQuery {
   from?: number;
@@ -230,11 +245,19 @@ export const api = {
     }),
   logout: () => request("POST", apiPath(ROUTES.authLogout), { expectUnauthorized: true }),
   me: () => request("GET", apiPath(ROUTES.me), { schema: zMe, expectUnauthorized: true }),
+  updateMe: (body: MeUpdate) => request("PATCH", apiPath(ROUTES.me), { body, schema: zMe }),
 
   // --- devices
   devices: () => request("GET", apiPath(ROUTES.devices), { schema: zDeviceList }),
-  createPairingCode: () =>
-    request("POST", apiPath(ROUTES.devicePairingCodes), { schema: zPairingCode }),
+  createPairingCode: (body: PairingCodeRequest = {}) =>
+    request("POST", apiPath(ROUTES.devicePairingCodes), { body, schema: zPairingCode }),
+  /** Public: the single-use code is the credential. Used to pair this browser itself. */
+  pairDevice: (body: PairRequest) =>
+    request("POST", apiPath(ROUTES.devicePair), {
+      body,
+      schema: zPairResponse,
+      expectUnauthorized: true,
+    }),
   updateDevice: (id: string, body: DeviceUpdate) =>
     request("PATCH", apiPath(ROUTES.device, { id }), { body, schema: zDevice }),
   revokeDevice: (id: string) => request("DELETE", apiPath(ROUTES.device, { id })),
@@ -273,6 +296,17 @@ export const api = {
   search: (body: SearchRequest) =>
     request("POST", apiPath(ROUTES.search), { body, schema: zSearchResponse }),
   ask: (body: AskRequest) => request("POST", apiPath(ROUTES.ask), { body, schema: zAskResponse }),
+  days: (q: DayListQuery, signal?: AbortSignal) =>
+    request("GET", apiPath(ROUTES.days, {}, { ...q }), { schema: zDayPage, signal }),
+  day: (date: string, signal?: AbortSignal) =>
+    request("GET", apiPath(ROUTES.day, { date }), { schema: zDayDetail, signal }),
+  regenerateDay: (date: string) => request("POST", apiPath(ROUTES.dayRegenerate, { date })),
+  /** The account-wide kill switch. */
+  capturePause: (paused: boolean) =>
+    request("POST", apiPath(ROUTES.capturePause), {
+      body: { paused },
+      schema: zCapturePauseState,
+    }),
   activeStreams: () =>
     request("GET", apiPath(ROUTES.streams, {}, { active: true }), { schema: zStreamList }),
 

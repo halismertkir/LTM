@@ -5,9 +5,11 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { type ReactElement, useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
+import { AskProvider } from "./api/ask";
 import { ApiError, api, isApiError } from "./api/client";
+import { ListenProvider } from "./api/listen";
 import { LiveProvider } from "./api/live";
 import { qk, useMe } from "./api/queries";
 import { SessionProvider, useSession } from "./api/session";
@@ -19,8 +21,10 @@ import { I18nProvider, useI18n } from "./i18n";
 import { AuthScreen } from "./pages/Auth";
 import { ConsentPage } from "./pages/Consent";
 import { ConversationPage } from "./pages/Conversation";
+import { DayPage, DaysPage } from "./pages/Days";
 import { DevicesPage } from "./pages/Devices";
 import { MemoriesPage } from "./pages/Memories";
+import { MorePage } from "./pages/More";
 import { NotFoundPage } from "./pages/NotFound";
 import { SearchPage } from "./pages/Search";
 import { DataSettings } from "./pages/settings/Data";
@@ -114,56 +118,32 @@ function AuthGate() {
   }
   return (
     <LiveProvider>
-      <AdoptAccountLocale />
-      <AppRoutes />
+      <AskProvider>
+        <ListenProvider>
+          <AdoptAccountLocale />
+          <AppRoutes />
+        </ListenProvider>
+      </AskProvider>
     </LiveProvider>
   );
 }
+
+/** Screens about captured data and capture devices sit behind the consent gate. */
+const gated = (el: ReactElement) => <RequireConsent>{el}</RequireConsent>;
 
 export function AppRoutes() {
   return (
     <Routes>
       <Route element={<Shell />}>
-        <Route
-          index
-          element={
-            <RequireConsent>
-              <TimelinePage />
-            </RequireConsent>
-          }
-        />
-        <Route
-          path="conversations/:id"
-          element={
-            <RequireConsent>
-              <ConversationPage />
-            </RequireConsent>
-          }
-        />
-        <Route
-          path="memories"
-          element={
-            <RequireConsent>
-              <MemoriesPage />
-            </RequireConsent>
-          }
-        />
-        <Route
-          path="search"
-          element={
-            <RequireConsent>
-              <SearchPage />
-            </RequireConsent>
-          }
-        />
-        <Route
-          path="devices"
-          element={
-            <RequireConsent>
-              <DevicesPage />
-            </RequireConsent>
-          }
-        />
+        <Route index element={gated(<DaysPage />)} />
+        <Route path="days/:date" element={gated(<DayPage />)} />
+        <Route path="timeline" element={gated(<TimelinePage />)} />
+        <Route path="conversations/:id" element={gated(<ConversationPage />)} />
+        <Route path="memories" element={gated(<MemoriesPage />)} />
+        <Route path="search" element={gated(<SearchPage />)} />
+        <Route path="ask" element={gated(<SearchPage />)} />
+        <Route path="devices" element={gated(<DevicesPage />)} />
+        <Route path="more" element={<MorePage />} />
         <Route path="consent" element={<ConsentPage />} />
         <Route path="settings" element={<SettingsLayout />}>
           <Route index element={<Navigate to="providers" replace />} />

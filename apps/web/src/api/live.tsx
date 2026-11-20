@@ -2,7 +2,14 @@ import { type LiveEvent, type StreamInfo, zLiveEvent } from "@ltm/protocol";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useReducer } from "react";
 import { api, urls } from "./client";
-import { qk, removeConversation, upsertConversation } from "./queries";
+import {
+  patchDayConversation,
+  qk,
+  removeConversation,
+  setIngestPaused,
+  upsertConversation,
+  upsertDay,
+} from "./queries";
 
 export interface LiveCaption {
   key: string;
@@ -105,9 +112,18 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       switch (event.type) {
         case "conversation_updated":
           upsertConversation(qc, event.conversation);
+          patchDayConversation(qc, event.conversation);
           break;
         case "conversation_deleted":
           removeConversation(qc, event.conversationId);
+          void qc.invalidateQueries({ queryKey: qk.dayAll });
+          break;
+        case "day_updated":
+          upsertDay(qc, event.day);
+          break;
+        case "capture_paused":
+          // Flipped from another device or tab: every indicator follows at once.
+          setIngestPaused(qc, event.ingestPaused);
           break;
         case "memory_created":
           void qc.invalidateQueries({ queryKey: qk.memoriesAll });

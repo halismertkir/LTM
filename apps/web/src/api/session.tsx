@@ -8,6 +8,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { localDeviceStorage } from "../lib/listen";
 import { api, setUnauthorizedHandler } from "./client";
 import { qk } from "./queries";
 
@@ -26,6 +27,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const dropSession = useCallback(() => {
     setSignedOut(true);
+    // This browser's capture credential belongs to the account that is signing out.
+    localDeviceStorage().clear();
     // Nothing from the previous session may linger in memory for the next person at this screen.
     qc.removeQueries({ predicate: (q) => q.queryKey[0] !== qk.authStatus[0] });
   }, [qc]);

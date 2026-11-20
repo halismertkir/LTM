@@ -1,9 +1,10 @@
-import type { ActionItem, ConversationDetail, Device, Utterance } from "@ltm/protocol";
+import type { ConversationDetail, Device, Utterance } from "@ltm/protocol";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useId, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { api, isApiError } from "../api/client";
 import { qk, removeConversation, useConversation, useDeviceMap } from "../api/queries";
+import { ActionItemRow } from "../components/ActionItemRow";
 import { ConfirmDialog } from "../components/Dialog";
 import {
   DeviceIcon,
@@ -16,8 +17,8 @@ import {
 import { useToast } from "../components/Toast";
 import { EmptyState, ErrorNote, Loading, Markdown, StatusChip } from "../components/ui";
 import { type MessageKey, useI18n } from "../i18n";
-import { formatDate, formatDuration, formatTime } from "../lib/format";
 import { MEMORY_KIND_KEY, SOURCE_KEY } from "../lib/labels";
+import { useFmt } from "../lib/useFmt";
 
 const SPEAKER_KEY: Record<Utterance["speaker"], MessageKey> = {
   self: "speaker.self",
@@ -206,64 +207,6 @@ function NotesSection({ conv }: { conv: ConversationDetail }) {
   );
 }
 
-function ActionItemRow({
-  convId,
-  item,
-  inputId,
-}: {
-  convId: string;
-  item: ActionItem;
-  inputId: string;
-}) {
-  const { t, locale } = useI18n();
-  const qc = useQueryClient();
-  const patch = useDetailPatch(convId);
-  // Local state flips in the same frame as the click; the query cache notifies on a later tick.
-  const [done, setDone] = useState(item.done);
-  useEffect(() => setDone(item.done), [item.done]);
-  const toggle = useMutation({
-    mutationFn: (next: boolean) => api.updateActionItem(convId, item.id, { done: next }),
-    onError: () => setDone(item.done),
-    onSuccess: (updated) => {
-      const cur = qc.getQueryData<ConversationDetail>(qk.conversation(convId));
-      if (cur)
-        patch({ actionItems: cur.actionItems.map((a) => (a.id === updated.id ? updated : a)) });
-      void qc.invalidateQueries({ queryKey: qk.conversationsAll });
-    },
-  });
-  return (
-    <li className={done ? "done" : ""}>
-      <input
-        id={inputId}
-        type="checkbox"
-        checked={done}
-        onChange={(e) => {
-          setDone(e.target.checked);
-          toggle.mutate(e.target.checked);
-        }}
-        disabled={toggle.isPending}
-      />
-      <label htmlFor={inputId}>
-        <span className="checklist-text">{item.text}</span>
-        {(item.owner || item.due) && (
-          <span className="checklist-meta">
-            {item.owner && <span>{item.owner}</span>}
-            {item.due && (
-              <span>
-                {t("conv.due", {
-                  date: /^\d{4}-\d{2}-\d{2}$/.test(item.due)
-                    ? formatDate(Date.parse(`${item.due}T12:00:00`), locale)
-                    : item.due,
-                })}
-              </span>
-            )}
-          </span>
-        )}
-      </label>
-    </li>
-  );
-}
-
 function ActionItems({ conv }: { conv: ConversationDetail }) {
   const { t } = useI18n();
   const baseId = useId();
@@ -326,13 +269,12 @@ function UtteranceRow({
   devices: Map<string, Device>;
   highlighted: boolean;
 }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
+  const fmt = useFmt();
   return (
     <li id={`u-${u.id}`} className={`utt speaker-${u.speaker} ${highlighted ? "highlight" : ""}`}>
       <div className="utt-side">
-        <time dateTime={new Date(u.startMs).toISOString()}>
-          {formatTime(u.startMs, locale, true)}
-        </time>
+        <time dateTime={new Date(u.startMs).toISOString()}>{fmt.time(u.startMs, true)}</time>
         <span className="utt-speaker">{t(SPEAKER_KEY[u.speaker])}</span>
       </div>
       <div className="utt-main">
@@ -375,7 +317,8 @@ function UtteranceRow({
 
 export function ConversationPage() {
   const { id = "" } = useParams();
-  const { t, tn, locale } = useI18n();
+  const { t, tn } = useI18n();
+  const fmt = useFmt();
   const qc = useQueryClient();
   const toast = useToast();
   const navigate = useNavigate();
@@ -431,19 +374,19 @@ export function ConversationPage() {
 
   return (
     <div className="page conversation">
-      <Link to="/" className="back-link">
-        <IconArrowLeft size={16} /> {t("nav.timeline")}
+      <Link to={`/days/${fmt.dayOf(c.startMs)}`} className="back-link">
+        <IconArrowLeft size={16} /> {fmt.day(fmt.dayOf(c.startMs))}
       </Link>
 
       <header className="conv-header">
         <div className="conv-header-main">
           <p className="eyebrow">
-            {formatDate(c.startMs, locale)} · {formatTime(c.startMs, locale)}–
-            {formatTime(c.endMs, locale)} · {formatDuration(c.endMs - c.startMs, locale)}
+            {fmt.date(c.startMs)} · {fmt.time(c.startMs)}–{fmt.time(c.endMs)} ·{" "}
+            {fmt.duration(c.endMs - c.startMs)}
           </p>
           <TitleEditor key={c.title ?? ""} conv={c} />
           <div className="conv-header-meta">
-            <StatusChip status={c.status} />
+            <StatusChip status={c.status} interim={c.interim} />
             {deviceNames.length > 0 && (
               <span className="muted">
                 {t("conv.heardByList", { devices: deviceNames.join(", ") })}
@@ -483,7 +426,16 @@ export function ConversationPage() {
         </div>
       )}
       {c.status === "processing" && <div className="note">{t("conv.processingNote")}</div>}
-      {c.status === "open" && <div className="note note-live">{t("conv.openNote")}</div>}
+      {c.status === "open" &&
+        (c.interim ? (
+          <div className="note note-live">
+            <p>
+              <strong>{t("conv.interimTitle")}</strong> {t("conv.interimNote")}
+            </p>
+          </div>
+        ) : (
+          <div className="note note-live">{t("conv.openNote")}</div>
+        ))}
 
       <div className="detail-grid">
         <div className="detail-notes">

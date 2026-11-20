@@ -1,13 +1,14 @@
 import { screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { createFixtures } from "../mock/fixtures";
-import { groupByDay } from "../src/pages/Timeline";
-import { installMock, renderApp } from "./helpers";
+import { createFixtures, FIXTURE_TZ } from "../mock/fixtures";
+import { dayInZone } from "../src/lib/zone";
+import { ConversationCard, groupByDay } from "../src/pages/Timeline";
+import { installMock, renderApp, renderWithProviders } from "./helpers";
 
 describe("timeline", () => {
   it("renders fixture conversations grouped by day, newest first", async () => {
     installMock({ signedIn: true });
-    renderApp("/");
+    renderApp("/timeline");
 
     expect(
       await screen.findByRole("heading", { level: 3, name: "Pricing review with the design team" }),
@@ -16,8 +17,12 @@ describe("timeline", () => {
     expect(dayHeadings).toEqual(expect.arrayContaining(["Today", "Yesterday"]));
     expect(dayHeadings.indexOf("Today")).toBeLessThan(dayHeadings.indexOf("Yesterday"));
 
-    // Placeholder titles while a conversation is still open or being processed.
-    expect(screen.getByRole("heading", { level: 3, name: /^Listening since/ })).toBeTruthy();
+    // An open conversation with interim notes shows them, marked as provisional.
+    const live = screen
+      .getByRole("heading", { level: 3, name: "Weekly product sync: roadmap and hiring" })
+      .closest("article")!;
+    expect(within(live).getByText("Live · notes so far")).toBeTruthy();
+    // Placeholder title while a conversation is being processed.
     expect(screen.getByRole("heading", { level: 3, name: "Writing notes…" })).toBeTruthy();
 
     const card = screen
@@ -30,8 +35,16 @@ describe("timeline", () => {
 
     expect(screen.getAllByText("Transcript only").length).toBeGreaterThan(0);
     // The live strip reports the active streams from /streams.
-    expect(screen.getByRole("heading", { name: "Listening on 2 devices" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Listening on 2 devices" })).toBeTruthy();
     expect(screen.getAllByRole("button", { name: /Pause capture/ }).length).toBeGreaterThan(0);
+  });
+
+  it("shows a placeholder title for an open conversation without notes yet", async () => {
+    installMock({ signedIn: true });
+    const c = { ...createFixtures().conversations[0]!, title: null, summary: null, interim: false };
+    renderWithProviders(<ConversationCard c={c} devices={new Map()} />);
+    expect(await screen.findByRole("heading", { name: /^Listening since/ })).toBeTruthy();
+    expect(screen.getByText("Live")).toBeTruthy();
   });
 
   it("explains how to pair a first device when there is nothing yet", async () => {
@@ -45,12 +58,11 @@ describe("timeline", () => {
     );
   });
 
-  it("groups by local day", () => {
+  it("groups by day in the account's zone", () => {
     const fx = createFixtures();
-    const groups = groupByDay(fx.conversations);
+    const groups = groupByDay(fx.conversations, FIXTURE_TZ);
     for (const g of groups)
-      for (const c of g.items)
-        expect(new Date(c.startMs).toDateString()).toBe(new Date(g.day).toDateString());
+      for (const c of g.items) expect(dayInZone(c.startMs, FIXTURE_TZ)).toBe(g.day);
     const starts = groups.flatMap((g) => g.items.map((c) => c.startMs));
     expect([...starts].sort((a, b) => b - a)).toEqual(starts);
   });

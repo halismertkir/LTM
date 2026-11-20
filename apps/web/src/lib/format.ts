@@ -1,5 +1,6 @@
 import type { Locale } from "@ltm/protocol";
 import { translate } from "../i18n";
+import { addDays, dayInZone, noonOf, zonedTime } from "./zone";
 
 // Intl formatters are comparatively expensive to construct; timeline cards format many dates.
 const cache = new Map<string, Intl.DateTimeFormat | Intl.NumberFormat | Intl.RelativeTimeFormat>();
@@ -19,59 +20,77 @@ const tag = (l: Locale) => (l === "tr" ? "tr-TR" : "en-GB");
 // en-GB rather than en-US gives 24h clocks and day-month order, which reads better next to
 // Turkish and matches the notebook tone; month names are still English.
 
-export function formatTime(ms: number, locale: Locale, seconds = false): string {
+// Every date/time function takes the IANA zone to format in. Callers pass the account's
+// zone (see useFmt) so a day and the times inside it always agree, wherever the browser is.
+
+export function formatTime(ms: number, locale: Locale, seconds = false, tz?: string): string {
   return cached(
-    `t:${locale}:${seconds}`,
+    `t:${locale}:${seconds}:${tz}`,
     () =>
       new Intl.DateTimeFormat(tag(locale), {
         hour: "2-digit",
         minute: "2-digit",
         second: seconds ? "2-digit" : undefined,
+        timeZone: tz,
       }),
   ).format(ms);
 }
 
-export function formatDate(ms: number, locale: Locale, withYear = true): string {
+export function formatDate(ms: number, locale: Locale, withYear = true, tz?: string): string {
   return cached(
-    `d:${locale}:${withYear}`,
+    `d:${locale}:${withYear}:${tz}`,
     () =>
       new Intl.DateTimeFormat(tag(locale), {
         day: "numeric",
         month: "long",
         year: withYear ? "numeric" : undefined,
+        timeZone: tz,
       }),
   ).format(ms);
 }
 
-export function formatDateTime(ms: number, locale: Locale): string {
+export function formatDateTime(ms: number, locale: Locale, tz?: string): string {
   return cached(
-    `dt:${locale}`,
-    () => new Intl.DateTimeFormat(tag(locale), { dateStyle: "medium", timeStyle: "short" }),
+    `dt:${locale}:${tz}`,
+    () =>
+      new Intl.DateTimeFormat(tag(locale), {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: tz,
+      }),
   ).format(ms);
 }
 
-export function startOfDay(ms: number): number {
-  const d = new Date(ms);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
-
-/** "Today", "Yesterday", or "Monday, 17 November" (with the year when it is not this year). */
-export function formatDayHeading(dayStartMs: number, locale: Locale, now = Date.now()): string {
-  const today = startOfDay(now);
-  if (dayStartMs === today) return translate(locale, "time.today");
-  if (dayStartMs === startOfDay(today - 12 * 3600_000)) return translate(locale, "time.yesterday");
-  const sameYear = new Date(dayStartMs).getFullYear() === new Date(now).getFullYear();
+/**
+ * A calendar day (`YYYY-MM-DD`, already in the account's zone) as words: "Today",
+ * "Yesterday", or "Monday 17 November" (with the year when it is not this year).
+ * `relative: false` always gives the weekday form.
+ */
+export function formatDay(
+  date: string,
+  locale: Locale,
+  tz: string,
+  opts: { now?: number; relative?: boolean; weekday?: boolean } = {},
+): string {
+  const now = opts.now ?? Date.now();
+  const today = dayInZone(now, tz);
+  if (opts.relative !== false) {
+    if (date === today) return translate(locale, "time.today");
+    if (date === addDays(today, -1)) return translate(locale, "time.yesterday");
+  }
+  const sameYear = date.slice(0, 4) === today.slice(0, 4);
+  const weekday = opts.weekday !== false;
   return cached(
-    `h:${locale}:${sameYear}`,
+    `day:${locale}:${sameYear}:${weekday}:${tz}`,
     () =>
       new Intl.DateTimeFormat(tag(locale), {
-        weekday: "long",
+        weekday: weekday ? "long" : undefined,
         day: "numeric",
         month: "long",
         year: sameYear ? undefined : "numeric",
+        timeZone: tz,
       }),
-  ).format(dayStartMs);
+  ).format(noonOf(date, tz));
 }
 
 function unit(locale: Locale, u: "hour" | "minute" | "second", n: number): string {
@@ -104,7 +123,7 @@ export function formatClock(ms: number): string {
   return `${h > 0 ? `${h}:` : ""}${mm}:${String(sec).padStart(2, "0")}`;
 }
 
-export function formatRelative(ms: number, locale: Locale, now = Date.now()): string {
+export function formatRelative(ms: number, locale: Locale, now = Date.now(), tz?: string): string {
   const rtf = cached(
     `r:${locale}`,
     () => new Intl.RelativeTimeFormat(tag(locale), { numeric: "auto", style: "long" }),
@@ -115,18 +134,19 @@ export function formatRelative(ms: number, locale: Locale, now = Date.now()): st
   if (abs < 3600_000) return rtf.format(Math.round(diff / 60_000), "minute");
   if (abs < 86400_000) return rtf.format(Math.round(diff / 3600_000), "hour");
   if (abs < 30 * 86400_000) return rtf.format(Math.round(diff / 86400_000), "day");
-  return formatDate(ms, locale);
+  return formatDate(ms, locale, true, tz);
 }
 
 export function formatNumber(n: number, locale: Locale): string {
   return cached(`n:${locale}`, () => new Intl.NumberFormat(tag(locale))).format(n);
 }
 
-/** `YYYY-MM-DD` (date input value) in local time → epoch ms of the start of that day. */
-export function dateInputToMs(value: string, endOfDay = false): number | undefined {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!m) return undefined;
-  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  if (endOfDay) d.setHours(23, 59, 59, 999);
-  return d.getTime();
+/** `YYYY-MM-DD` (date input value) in `tz` → epoch ms of the start (or end) of that day. */
+export function dateInputToMs(value: string, endOfDay = false, tz?: string): number | undefined {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+  if (tz) return endOfDay ? zonedTime(addDays(value, 1), tz) - 1 : zonedTime(value, tz);
+  const [y, m, d] = value.split("-").map(Number) as [number, number, number];
+  const t = new Date(y, m - 1, d);
+  if (endOfDay) t.setHours(23, 59, 59, 999);
+  return t.getTime();
 }

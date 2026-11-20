@@ -8,7 +8,7 @@ import { IconCheck, IconLock } from "../components/Icons";
 import { useToast } from "../components/Toast";
 import { ErrorNote, Markdown, PageHeader } from "../components/ui";
 import { useI18n } from "../i18n";
-import { formatDate } from "../lib/format";
+import { useFmt } from "../lib/useFmt";
 
 export function ConsentDocBody({ doc }: { doc: ConsentDocument }) {
   const { locale, t } = useI18n();
@@ -38,6 +38,7 @@ function pendingDocuments(
 
 export function ConsentGate({ onDone }: { onDone?: () => void }) {
   const { t, locale } = useI18n();
+  const fmt = useFmt();
   const me = useMeData();
   const qc = useQueryClient();
   const toast = useToast();
@@ -153,7 +154,7 @@ export function ConsentGate({ onDone }: { onDone?: () => void }) {
               {t("consent.later")}
             </Link>
           </div>
-          <p className="hint">{t("consent.footnote", { date: formatDate(Date.now(), locale) })}</p>
+          <p className="hint">{t("consent.footnote", { date: fmt.date(Date.now()) })}</p>
         </form>
       )}
     </div>

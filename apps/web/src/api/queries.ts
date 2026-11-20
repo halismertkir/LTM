@@ -1,10 +1,11 @@
 import type {
   ConversationSummary,
+  DayDetail,
+  DaySummary,
   Device,
   Me,
   MemoryKind,
   Page,
-  PrivacySettings,
   Settings,
 } from "@ltm/protocol";
 import {
@@ -16,7 +17,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { api } from "./client";
+import { api, isApiError } from "./client";
 
 export interface ConversationFilters {
   q: string;
@@ -40,6 +41,9 @@ export const qk = {
   conversation: (id: string) => ["conversation", id] as const,
   memoriesAll: ["memories"] as const,
   memories: (f: MemoryFilters) => ["memories", f] as const,
+  daysAll: ["days"] as const,
+  dayAll: ["day"] as const,
+  day: (date: string) => ["day", date] as const,
 };
 
 const PAGE_SIZE = 30;
@@ -89,6 +93,57 @@ export function useConversation(id: string) {
   return useQuery({
     queryKey: qk.conversation(id),
     queryFn: ({ signal }) => api.conversation(id, signal),
+  });
+}
+
+export function useDays() {
+  return useInfiniteQuery({
+    queryKey: qk.daysAll,
+    queryFn: ({ pageParam, signal }) => api.days({ limit: 14, cursor: pageParam }, signal),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
+}
+
+/** A day on which nothing was captured — what the server's 404 for a day means. */
+export function emptyDay(date: string, timeZone: string): DayDetail {
+  return {
+    date,
+    status: "none",
+    headline: null,
+    summary: null,
+    conversationCount: 0,
+    speechMinutes: 0,
+    openActionItems: 0,
+    updatedAt: null,
+    timeZone,
+    digest: null,
+    highlights: [],
+    decisions: [],
+    people: [],
+    conversations: [],
+    actionItems: [],
+    statusDetail: null,
+  };
+}
+
+/**
+ * One day's detail. The server answers 404 for a day on which nothing was captured; that is
+ * an empty day, not an error. `enabled: false` skips the request when the day list already
+ * shows there is nothing (the caller then renders `emptyDay`).
+ */
+export function useDay(date: string, tz: string, enabled = true) {
+  return useQuery({
+    queryKey: qk.day(date),
+    enabled,
+    queryFn: async ({ signal }) => {
+      try {
+        return await api.day(date, signal);
+      } catch (e) {
+        if (isApiError(e, "not_found")) return emptyDay(date, tz);
+        throw e;
+      }
+    },
   });
 }
 
@@ -157,21 +212,62 @@ export function removeConversation(qc: QueryClient, id: string): void {
   qc.removeQueries({ queryKey: qk.conversation(id) });
 }
 
-/** The account-wide kill switch. Writes the full PrivacySettings object the route expects. */
+type DayPages = InfiniteData<Page<DaySummary>, string | undefined>;
+
+/** Apply a live `day_updated` event: replace the listed day, or add a new one at the top. */
+export function upsertDay(qc: QueryClient, day: DaySummary): void {
+  qc.setQueryData<DayPages>(qk.daysAll, (data) => {
+    if (!data) return data;
+    const found = data.pages.some((p) => p.items.some((d) => d.date === day.date));
+    if (found) {
+      return {
+        ...data,
+        pages: data.pages.map((p) => ({
+          ...p,
+          items: p.items.map((d) => (d.date === day.date ? day : d)),
+        })),
+      };
+    }
+    const [first, ...rest] = data.pages;
+    if (!first) return data;
+    const items = [day, ...first.items].sort((a, b) => b.date.localeCompare(a.date));
+    return { ...data, pages: [{ ...first, items }, ...rest] };
+  });
+  qc.setQueryData<DayDetail>(qk.day(day.date), (d) => (d ? { ...d, ...day } : d));
+  // The digest text, highlights and lists are not in the summary event.
+  void qc.invalidateQueries({ queryKey: qk.day(day.date) });
+}
+
+/** Patch a conversation inside any cached day detail that lists it. */
+export function patchDayConversation(qc: QueryClient, conv: ConversationSummary): void {
+  for (const query of qc.getQueryCache().findAll({ queryKey: qk.dayAll })) {
+    const data = query.state.data as DayDetail | undefined;
+    if (!data) continue;
+    if (data.conversations.some((c) => c.id === conv.id)) {
+      qc.setQueryData<DayDetail>(query.queryKey, {
+        ...data,
+        conversations: data.conversations.map((c) => (c.id === conv.id ? conv : c)),
+      });
+    } else {
+      // A new conversation may belong to this day; only the server knows its zone boundaries.
+      void qc.invalidateQueries({ queryKey: query.queryKey });
+    }
+  }
+}
+
+/** Reflect the kill switch everywhere it is cached. */
+export function setIngestPaused(qc: QueryClient, paused: boolean): void {
+  qc.setQueryData<Settings>(qk.settings, (s) =>
+    s ? { ...s, privacy: { ...s.privacy, ingestPaused: paused } } : s,
+  );
+  qc.setQueryData<Me>(qk.me, (m) => (m ? { ...m, ingestPaused: paused } : m));
+}
+
+/** The account-wide kill switch (`POST /capture/pause`). */
 export function usePauseCapture() {
   const qc = useQueryClient();
-  const settings = useSettings();
-  const mutation = useMutation({
-    mutationFn: async (paused: boolean) => {
-      const current: Settings =
-        settings.data ?? (await qc.fetchQuery({ queryKey: qk.settings, queryFn: api.settings }));
-      const body: PrivacySettings = { ...current.privacy, ingestPaused: paused };
-      return api.putPrivacy(body);
-    },
-    onSuccess: (privacy) => {
-      qc.setQueryData<Settings>(qk.settings, (s) => (s ? { ...s, privacy } : s));
-      qc.setQueryData<Me>(qk.me, (m) => (m ? { ...m, ingestPaused: privacy.ingestPaused } : m));
-    },
+  return useMutation({
+    mutationFn: (paused: boolean) => api.capturePause(paused),
+    onSuccess: (state) => setIngestPaused(qc, state.ingestPaused),
   });
-  return mutation;
 }

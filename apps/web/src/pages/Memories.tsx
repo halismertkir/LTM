@@ -9,9 +9,9 @@ import { IconEdit, IconMemory, IconPlus, IconSearch, IconTrash } from "../compon
 import { useToast } from "../components/Toast";
 import { EmptyState, ErrorNote, ImportanceDots, Loading, PageHeader } from "../components/ui";
 import { useI18n } from "../i18n";
-import { formatDate } from "../lib/format";
 import { useDebounced, useInfiniteSentinel } from "../lib/hooks";
 import { MEMORY_KIND_KEY } from "../lib/labels";
+import { useFmt } from "../lib/useFmt";
 
 const KINDS = zMemoryKind.options;
 
@@ -172,7 +172,8 @@ function MemoryCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
+  const fmt = useFmt();
   return (
     <li id={`m-${m.id}`} className={`memory card ${focused ? "highlight" : ""}`}>
       <div className="memory-top">
@@ -215,7 +216,7 @@ function MemoryCard({
       <p className="memory-meta">
         {m.origin === "manual" ? t("memories.manual") : t("memories.extracted")}
         {" · "}
-        {formatDate(Date.parse(m.occurredAt ?? m.createdAt), locale)}
+        {fmt.date(Date.parse(m.occurredAt ?? m.createdAt))}
         {m.sourceConversationId && (
           <>
             {" · "}

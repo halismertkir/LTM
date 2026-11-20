@@ -123,12 +123,17 @@ const STATUS_KEY: Record<ConversationStatus, MessageKey> = {
   transcript_only: "status.transcript_only",
 };
 
-export function StatusChip({ status }: { status: ConversationStatus }) {
+export function StatusChip({ status, interim }: { status: ConversationStatus; interim?: boolean }) {
   const { t } = useI18n();
+  // Interim notes exist but will be rewritten when the conversation ends.
+  const live = status === "open" && interim;
   return (
-    <span className={`chip status-${status}`}>
+    <span
+      className={`chip status-${status}${live ? " status-interim" : ""}`}
+      title={live ? t("status.interimHint") : undefined}
+    >
       {status === "open" && <span className="rec-dot" aria-hidden="true" />}
-      {t(STATUS_KEY[status])}
+      {live ? t("status.interim") : t(STATUS_KEY[status])}
     </span>
   );
 }

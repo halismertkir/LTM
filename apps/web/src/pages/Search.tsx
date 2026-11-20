@@ -1,13 +1,15 @@
 import { type SearchHit, type SearchHitType, zSearchHitType } from "@ltm/protocol";
 import { useMutation } from "@tanstack/react-query";
-import { type FormEvent, useId, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from "react";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
+import { type AskTurn, useAskThread } from "../api/ask";
 import { api, isApiError } from "../api/client";
 import { IconChat, IconMemory, IconSearch, IconSparkle, IconTimeline } from "../components/Icons";
 import { EmptyState, ErrorNote, Loading, Markdown, PageHeader } from "../components/ui";
 import { type MessageKey, useI18n } from "../i18n";
-import { formatDateTime } from "../lib/format";
 import { linkCitations } from "../lib/markdown";
+import type { AskScope } from "../lib/scope";
+import { useFmt } from "../lib/useFmt";
 
 const HIT_KEY: Record<SearchHitType, MessageKey> = {
   memory: "search.typeMemory",
@@ -31,13 +33,25 @@ function HitIcon({ type }: { type: SearchHitType }) {
   return <IconChat size={16} />;
 }
 
-function Hit({ hit, index }: { hit: SearchHit; index?: number }) {
-  const { t, locale } = useI18n();
+function Hit({
+  hit,
+  index,
+  idPrefix = "cite",
+}: {
+  hit: SearchHit;
+  index?: number;
+  idPrefix?: string;
+}) {
+  const { t } = useI18n();
+  const fmt = useFmt();
   const href = hitHref(hit);
   // Memories have no title; their snippet is the statement itself and becomes the link.
   const title = hit.title;
   return (
-    <li className={`hit hit-${hit.type}`} id={index !== undefined ? `cite-${index}` : undefined}>
+    <li
+      className={`hit hit-${hit.type}`}
+      id={index !== undefined ? `${idPrefix}-${index}` : undefined}
+    >
       <div className="hit-head">
         {index !== undefined && <span className="cite-num">{index}</span>}
         <span className="chip chip-quiet">
@@ -46,7 +60,7 @@ function Hit({ hit, index }: { hit: SearchHit; index?: number }) {
         </span>
         {hit.atMs !== null && (
           <time className="muted" dateTime={new Date(hit.atMs).toISOString()}>
-            {formatDateTime(hit.atMs, locale)}
+            {fmt.dateTime(hit.atMs)}
           </time>
         )}
         <span className="score" title={t("search.score")}>
@@ -176,93 +190,194 @@ function SearchMode() {
   );
 }
 
+const SCOPE_KEY: Record<AskScope, MessageKey> = {
+  today: "ask.scopeToday",
+  week: "ask.scopeWeek",
+  all: "ask.scopeAll",
+};
+
+function AskAnswer({ turn }: { turn: AskTurn }) {
+  const { t, tn } = useI18n();
+  const [open, setOpen] = useState(false);
+  const prefix = `cite-${turn.id}`;
+  const answer = turn.answer;
+  const md = useMemo(
+    () => (answer ? linkCitations(answer.answer, answer.citations.length, prefix) : ""),
+    [answer, prefix],
+  );
+  if (turn.status === "pending") return <Loading label={t("ask.thinking")} />;
+  if (turn.status === "error") {
+    return isApiError(turn.error, "provider_not_configured") ? (
+      <div className="note note-warn" role="alert">
+        <p>
+          <strong>{t("ask.noProvider")}</strong> {t("ask.noProviderBody")}
+        </p>
+        <Link to="/settings/providers">{t("ask.configure")}</Link>
+      </div>
+    ) : (
+      <ErrorNote error={turn.error} />
+    );
+  }
+  if (!answer) return null;
+  return (
+    // Clicking a [n] marker opens the sources first, so the jump has somewhere to land.
+    // biome-ignore lint/a11y/noStaticElementInteractions: delegates clicks of the links inside
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the links themselves are keyboard reachable
+    <div
+      className="answer-inner"
+      onClick={(e) => {
+        const a = (e.target as HTMLElement).closest("a");
+        if (a?.getAttribute("href")?.startsWith(`#${prefix}-`)) setOpen(true);
+      }}
+    >
+      <Markdown source={md} className="answer-body" />
+      {answer.citations.length > 0 && (
+        <details className="sources" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+          <summary>{tn("ask.sourcesCount", answer.citations.length)}</summary>
+          <ol className="hits hits-cited">
+            {answer.citations.map((h, i) => (
+              // The position is the citation number, so the index is part of the identity.
+              // biome-ignore lint/suspicious/noArrayIndexKey: see above
+              <Hit key={`${h.type}-${h.id}-${i}`} hit={h} index={i + 1} idPrefix={prefix} />
+            ))}
+          </ol>
+        </details>
+      )}
+    </div>
+  );
+}
+
 function AskMode() {
   const { t } = useI18n();
+  const fmt = useFmt();
+  const thread = useAskThread();
+  const [params, setParams] = useSearchParams();
   const [question, setQuestion] = useState("");
+  const [scope, setScope] = useState<AskScope>("all");
   const inputId = useId();
-  const ask = useMutation({
-    meta: { inline: true },
-    mutationFn: () => api.ask({ question: question.trim() }),
-  });
-  const answer = useMemo(
-    () => (ask.data ? linkCitations(ask.data.answer, ask.data.citations.length) : ""),
-    [ask.data],
-  );
+  const bottom = useRef<HTMLDivElement>(null);
+  const handledQ = useRef<string | null>(null);
+  const pending = thread.turns.some((x) => x.status === "pending");
+
+  // A question sent from the header box arrives as ?q=… and runs right away.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the query string changes
+  useEffect(() => {
+    const q = params.get("q")?.trim();
+    if (!q || handledQ.current === q) return;
+    handledQ.current = q;
+    thread.ask(q, scope, fmt.tz);
+    setParams({}, { replace: true });
+  }, [params]);
+
+  // Keep the newest turn in view, like a chat.
+  useEffect(() => {
+    if (thread.turns.length) bottom.current?.scrollIntoView?.({ block: "end", behavior: "smooth" });
+  }, [thread.turns]);
+
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (question.trim()) ask.mutate();
+    const q = question.trim();
+    if (!q) return;
+    thread.ask(q, scope, fmt.tz);
+    setQuestion("");
   };
+
   return (
-    <div className="stack">
-      <form className="ask-form ask-form-col" onSubmit={onSubmit}>
+    <div className="stack ask">
+      {thread.turns.length === 0 ? (
+        <div className="ask-empty">
+          <p className="lead">{t("ask.emptyLead")}</p>
+          <ul className="ask-examples">
+            {(["ask.example1", "ask.example2", "ask.example3"] as const).map((k) => (
+              <li key={k}>
+                <button type="button" className="link-btn" onClick={() => setQuestion(t(k))}>
+                  {t(k)}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <ol className="thread" aria-label={t("ask.threadLabel")}>
+          {thread.turns.map((turn) => (
+            <li key={turn.id} className="turn">
+              <div className="turn-q">
+                <p>{turn.question}</p>
+                <span className="turn-meta">
+                  {fmt.time(turn.askedAt)} · {t(SCOPE_KEY[turn.scope])}
+                </span>
+              </div>
+              <div className="turn-a card" aria-live="polite" aria-busy={turn.status === "pending"}>
+                <AskAnswer turn={turn} />
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+
+      <form className="ask-compose card" onSubmit={onSubmit}>
         <label htmlFor={inputId} className="sr-only">
           {t("ask.question")}
         </label>
         <textarea
           id={inputId}
-          rows={3}
+          rows={2}
           value={question}
           maxLength={2000}
+          enterKeyHint="send"
           onChange={(e) => setQuestion(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) onSubmit(e);
           }}
-          placeholder={t("ask.placeholder")}
+          placeholder={thread.turns.length ? t("ask.placeholderMore") : t("ask.placeholder")}
         />
-        <div className="row row-between">
-          <span className="hint">{t("ask.hint")}</span>
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={!question.trim() || ask.isPending}
-          >
-            <IconSparkle size={16} /> {t("ask.submit")}
-          </button>
-        </div>
-      </form>
-
-      {ask.isPending && <Loading label={t("ask.thinking")} />}
-      {ask.error &&
-        (isApiError(ask.error, "provider_not_configured") ? (
-          <div className="note note-warn" role="alert">
-            <p>
-              <strong>{t("ask.noProvider")}</strong> {t("ask.noProviderBody")}
-            </p>
-            <Link to="/settings/providers">{t("ask.configure")}</Link>
+        <div className="row row-between ask-compose-foot">
+          <fieldset className="segmented segmented-sm">
+            <legend className="sr-only">{t("ask.scope")}</legend>
+            {(["today", "week", "all"] as const).map((sc) => (
+              <label key={sc} className="seg-option">
+                <input
+                  type="radio"
+                  name="ask-scope"
+                  checked={scope === sc}
+                  onChange={() => setScope(sc)}
+                />
+                {t(SCOPE_KEY[sc])}
+              </label>
+            ))}
+          </fieldset>
+          <div className="row">
+            {thread.turns.length > 0 && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={thread.clear}
+                disabled={pending}
+              >
+                {t("ask.clear")}
+              </button>
+            )}
+            <button type="submit" className="btn btn-primary" disabled={!question.trim()}>
+              <IconSparkle size={16} /> {t("ask.submit")}
+            </button>
           </div>
-        ) : (
-          <ErrorNote error={ask.error} />
-        ))}
-      {ask.data && (
-        <section className="answer card" aria-live="polite" aria-labelledby="answer-h">
-          <h2 id="answer-h" className="eyebrow">
-            {t("ask.answer")}
-          </h2>
-          <Markdown source={answer} className="answer-body" />
-          {ask.data.citations.length > 0 && (
-            <>
-              <h3 className="sources-head">{t("ask.sources")}</h3>
-              <ol className="hits hits-cited">
-                {ask.data.citations.map((h, i) => (
-                  // The position is the citation number, so the index is part of the identity.
-                  // biome-ignore lint/suspicious/noArrayIndexKey: see above
-                  <Hit key={`${h.type}-${h.id}-${i}`} hit={h} index={i + 1} />
-                ))}
-              </ol>
-            </>
-          )}
-        </section>
-      )}
+        </div>
+        <p className="hint">{t("ask.hint")}</p>
+      </form>
+      <div ref={bottom} />
     </div>
   );
 }
 
 export function SearchPage() {
   const { t } = useI18n();
-  const [params, setParams] = useSearchParams();
-  const mode = params.get("mode") === "ask" ? "ask" : "search";
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  // /ask and /search are the same page; ?mode=ask is kept for old links.
+  const mode = location.pathname === "/ask" || params.get("mode") === "ask" ? "ask" : "search";
   const setMode = (m: "search" | "ask") =>
-    setParams(m === "ask" ? { mode: "ask" } : {}, { replace: true });
+    navigate(m === "ask" ? "/ask" : "/search", { replace: true });
   return (
     <div className="page">
       <PageHeader title={t("search.title")} lead={t("search.lead")} />

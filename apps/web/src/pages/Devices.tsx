@@ -1,26 +1,38 @@
-import { type Device, type PairingCode, SOURCE_PRIORITY } from "@ltm/protocol";
+import { type Device, type DeviceAccess, type PairingCode, SOURCE_PRIORITY } from "@ltm/protocol";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import QRCode from "qrcode";
-import { type FormEvent, useEffect, useId, useRef, useState } from "react";
+import { type FormEvent, useEffect, useId, useState } from "react";
 import { useSearchParams } from "react-router";
 import { api } from "../api/client";
 import { qk, useDevices } from "../api/queries";
 import { ConfirmDialog, Dialog } from "../components/Dialog";
 import {
   DeviceIcon,
+  IconAgent,
   IconCopy,
   IconDevices,
   IconEdit,
+  IconMic,
   IconPlus,
   IconRefresh,
   IconTrash,
 } from "../components/Icons";
+import { ListenControl } from "../components/ListenControl";
 import { useToast } from "../components/Toast";
 import { EmptyState, ErrorNote, Loading, PageHeader } from "../components/ui";
-import { useI18n } from "../i18n";
-import { formatClock, formatRelative } from "../lib/format";
+import { type MessageKey, useI18n } from "../i18n";
+import { formatClock } from "../lib/format";
 import { copyText, useNow } from "../lib/hooks";
 import { DEVICE_KIND_KEY, SOURCE_KEY } from "../lib/labels";
+import {
+  agentCommand,
+  defaultAccess,
+  needsCode,
+  PAIR_TARGETS,
+  type PairTarget,
+  TARGET_KIND,
+} from "../lib/pairing";
+import { useFmt } from "../lib/useFmt";
 
 function DeviceDialog({ device, onClose }: { device: Device | null; onClose: () => void }) {
   const { t } = useI18n();
@@ -28,19 +40,25 @@ function DeviceDialog({ device, onClose }: { device: Device | null; onClose: () 
   const [name, setName] = useState("");
   const [auto, setAuto] = useState(true);
   const [priority, setPriority] = useState(50);
-  const ids = { name: useId(), prio: useId(), explain: useId() };
+  const [access, setAccess] = useState<DeviceAccess>("capture");
+  const ids = { name: useId(), prio: useId(), explain: useId(), access: useId() };
 
   useEffect(() => {
     if (!device) return;
     setName(device.name);
     setAuto(device.priority === null);
     setPriority(device.priority ?? 50);
+    setAccess(device.access);
   }, [device]);
 
   const save = useMutation({
     meta: { inline: true },
     mutationFn: () =>
-      api.updateDevice(device!.id, { name: name.trim(), priority: auto ? null : priority }),
+      api.updateDevice(device!.id, {
+        name: name.trim(),
+        priority: auto ? null : priority,
+        access,
+      }),
     onSuccess: (updated) => {
       qc.setQueryData<Device[]>(qk.devices, (ds) =>
         ds?.map((d) => (d.id === updated.id ? updated : d)),
@@ -85,6 +103,33 @@ function DeviceDialog({ device, onClose }: { device: Device | null; onClose: () 
             required
           />
         </div>
+        <fieldset className="field">
+          <legend>{t("devices.access")}</legend>
+          <label className="check-row">
+            <input
+              type="radio"
+              name="access"
+              checked={access === "capture"}
+              onChange={() => setAccess("capture")}
+            />
+            <span>
+              <strong>{t("devices.accessCapture")}</strong>
+              <span className="hint block">{t("pair.memoryOff")}</span>
+            </span>
+          </label>
+          <label className="check-row">
+            <input
+              type="radio"
+              name="access"
+              checked={access === "memory"}
+              onChange={() => setAccess("memory")}
+            />
+            <span>
+              <strong>{t("devices.accessMemory")}</strong>
+              <span className="hint block">{t("pair.memoryOn")}</span>
+            </span>
+          </label>
+        </fieldset>
         <fieldset className="field" aria-describedby={ids.explain}>
           <legend>{t("devices.priority")}</legend>
           <p id={ids.explain} className="hint">
@@ -134,42 +179,75 @@ function DeviceDialog({ device, onClose }: { device: Device | null; onClose: () 
   );
 }
 
-type Client = "extension" | "iphone" | "watch";
+const TARGET_LABEL: Record<PairTarget, MessageKey> = {
+  extension: "pair.targetExtension",
+  iphone: "pair.targetIphone",
+  watch: "pair.targetWatch",
+  agent: "pair.targetAgent",
+  browser: "pair.targetBrowser",
+};
+
+function TargetIcon({ target, size }: { target: PairTarget; size?: number }) {
+  return target === "agent" ? (
+    <IconAgent size={size} />
+  ) : (
+    <DeviceIcon kind={TARGET_KIND[target]} size={size} />
+  );
+}
 
 function PairDialog({
   open,
   onClose,
-  knownIds,
+  onListen,
 }: {
   open: boolean;
   onClose: () => void;
-  knownIds: string[];
+  onListen: () => void;
 }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
+  const fmt = useFmt();
   const toast = useToast();
   const qc = useQueryClient();
-  const [client, setClient] = useState<Client>("extension");
+  const [target, setTarget] = useState<PairTarget>("extension");
+  const [access, setAccess] = useState<DeviceAccess>(defaultAccess("extension"));
   const [qr, setQr] = useState<string | null>(null);
   const now = useNow(1000, open);
-  const known = useRef<string[]>(knownIds);
   const devices = useDevices();
+  // Devices that existed when the dialog opened; anything new afterwards was just paired.
+  // Taken once the list has loaded — the dialog can open from a link before it has.
+  const [baseline, setBaseline] = useState<string[] | null>(null);
+  useEffect(() => {
+    if (open && baseline === null && devices.data) setBaseline(devices.data.map((d) => d.id));
+  }, [open, baseline, devices.data]);
+  const accessId = useId();
+  const accessHintId = useId();
 
-  const create = useMutation({ meta: { inline: true }, mutationFn: api.createPairingCode });
+  const create = useMutation({
+    meta: { inline: true },
+    mutationFn: (a: DeviceAccess) => api.createPairingCode({ access: a }),
+  });
   const code: PairingCode | undefined = create.data;
   const remaining = code ? Date.parse(code.expiresAt) - now : 0;
   const expired = !!code && remaining <= 0;
+  const withCode = needsCode(target);
 
-  // Keyed on `open` only: one fresh single-use code per opening, not per re-render.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset once per opening
   useEffect(() => {
-    if (open) {
-      known.current = knownIds;
-      create.mutate();
-    } else {
+    if (!open) {
+      setBaseline(null);
       create.reset();
       setQr(null);
+      setTarget("extension");
+      setAccess(defaultAccess("extension"));
     }
   }, [open]);
+
+  // A code carries its access level, so a different choice needs a fresh code.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `create` is stable enough; keyed on the inputs
+  useEffect(() => {
+    if (!open || !withCode || create.isPending) return;
+    if (!code || code.access !== access) create.mutate(access);
+  }, [open, withCode, access, code]);
 
   useEffect(() => {
     if (!code) return;
@@ -188,13 +266,74 @@ function PairDialog({
     const id = window.setInterval(() => void qc.invalidateQueries({ queryKey: qk.devices }), 3000);
     return () => window.clearInterval(id);
   }, [open, code, expired, qc]);
-  const paired = open ? (devices.data ?? []).find((d) => !known.current.includes(d.id)) : undefined;
+  const paired =
+    open && baseline ? (devices.data ?? []).find((d) => !baseline.includes(d.id)) : undefined;
 
   const serverUrl = typeof window !== "undefined" ? window.location.origin : "";
   const copy = async (text: string) => {
     const ok = await copyText(text);
     toast.show(ok ? t("common.copied") : t("common.copyFailed"), ok ? "success" : "error");
   };
+  const copyLine = (text: string, label: string) => (
+    <span className="copy-line">
+      <code>{text}</code>
+      <button type="button" className="icon-btn" onClick={() => void copy(text)} aria-label={label}>
+        <IconCopy size={14} />
+      </button>
+    </span>
+  );
+
+  const codePanel = create.isPending ? (
+    <Loading />
+  ) : create.error ? (
+    <ErrorNote error={create.error} onRetry={() => create.mutate(access)} />
+  ) : code ? (
+    <div className="pair-code-box">
+      <p className="eyebrow">{t("pair.code")}</p>
+      <p className={expired ? "pair-code expired" : "pair-code"}>
+        <span aria-hidden="true">{code.code}</span>
+        {/* Spelled out so screen readers read characters, not a word. */}
+        <span className="sr-only">{code.code.split("").join(" ")}</span>
+      </p>
+      <div className="row pair-code-actions">
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={() => void copy(code.code)}
+          disabled={expired}
+        >
+          <IconCopy size={14} /> {t("common.copy")}
+        </button>
+        {expired ? (
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            onClick={() => create.mutate(access)}
+          >
+            <IconRefresh size={14} /> {t("pair.newCode")}
+          </button>
+        ) : (
+          <span className="pair-countdown" role="timer" aria-live="off">
+            {t("pair.expiresIn", { time: formatClock(remaining) })}
+          </span>
+        )}
+      </div>
+      <div className="countdown-bar" aria-hidden="true">
+        <span style={{ width: `${Math.max(0, Math.min(100, (remaining / 600_000) * 100))}%` }} />
+      </div>
+      {expired && <p className="hint hint-warn">{t("pair.expired")}</p>}
+      {target === "iphone" && (
+        <div className={expired ? "qr qr-expired" : "qr"}>
+          {qr ? (
+            <img src={qr} width={200} height={200} alt={t("pair.qrAlt")} />
+          ) : (
+            <div className="qr-placeholder" />
+          )}
+        </div>
+      )}
+      <p className="hint">{t("pair.singleUse", { time: fmt.time(Date.parse(code.expiresAt)) })}</p>
+    </div>
+  ) : null;
 
   return (
     <Dialog open={open} onClose={onClose} title={t("pair.title")} size="lg">
@@ -202,151 +341,128 @@ function PairDialog({
         <div className="pair-done">
           <DeviceIcon kind={paired.kind} size={32} />
           <h3>{t("pair.paired", { name: paired.name })}</h3>
-          <p>{t("pair.pairedLead")}</p>
+          <p>{paired.access === "memory" ? t("pair.pairedLeadMemory") : t("pair.pairedLead")}</p>
           <button type="button" className="btn btn-primary" onClick={onClose}>
             {t("common.done")}
           </button>
         </div>
-      ) : create.isPending ? (
-        <Loading />
-      ) : create.error ? (
-        <ErrorNote error={create.error} onRetry={() => create.mutate()} />
-      ) : code ? (
-        <div className="pair">
-          <div className="pair-code-box">
-            <p className="eyebrow">{t("pair.code")}</p>
-            <p className={expired ? "pair-code expired" : "pair-code"}>
-              <span aria-hidden="true">{code.code}</span>
-              {/* Spelled out so screen readers read characters, not a word. */}
-              <span className="sr-only">{code.code.split("").join(" ")}</span>
-            </p>
-            <div className="row pair-code-actions">
-              <button
-                type="button"
-                className="btn btn-sm"
-                onClick={() => void copy(code.code)}
-                disabled={expired}
-              >
-                <IconCopy size={14} /> {t("common.copy")}
-              </button>
-              {expired ? (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-primary"
-                  onClick={() => create.mutate()}
-                >
-                  <IconRefresh size={14} /> {t("pair.newCode")}
-                </button>
-              ) : (
-                <span className="pair-countdown" role="timer" aria-live="off">
-                  {t("pair.expiresIn", { time: formatClock(remaining) })}
-                </span>
-              )}
-            </div>
-            <div className="countdown-bar" aria-hidden="true">
-              <span
-                style={{ width: `${Math.max(0, Math.min(100, (remaining / 600_000) * 100))}%` }}
-              />
-            </div>
-            {expired && <p className="hint hint-warn">{t("pair.expired")}</p>}
-            <div className={expired ? "qr qr-expired" : "qr"}>
-              {qr ? (
-                <img src={qr} width={200} height={200} alt={t("pair.qrAlt")} />
-              ) : (
-                <div className="qr-placeholder" />
-              )}
-            </div>
-          </div>
+      ) : (
+        <div className="stack">
+          <fieldset className="target-grid">
+            <legend>{t("pair.which")}</legend>
+            {PAIR_TARGETS.map((x) => (
+              <label key={x} className={`target-option ${target === x ? "on" : ""}`}>
+                <input
+                  type="radio"
+                  name="pair-target"
+                  checked={target === x}
+                  onChange={() => {
+                    setTarget(x);
+                    setAccess(defaultAccess(x));
+                  }}
+                />
+                <TargetIcon target={x} size={20} />
+                <span>{t(TARGET_LABEL[x])}</span>
+              </label>
+            ))}
+          </fieldset>
 
-          <div className="pair-howto">
-            <div className="segmented" role="tablist" aria-label={t("pair.which")}>
-              {(["extension", "iphone", "watch"] as const).map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  role="tab"
-                  aria-selected={client === c}
-                  onClick={() => setClient(c)}
-                >
-                  <DeviceIcon
-                    kind={
-                      c === "extension"
-                        ? "browser_extension"
-                        : c === "iphone"
-                          ? "iphone"
-                          : "apple_watch"
-                    }
-                    size={16}
-                  />
-                  {t(
-                    c === "extension"
-                      ? "deviceKind.browser_extension"
-                      : c === "iphone"
-                        ? "deviceKind.iphone"
-                        : "deviceKind.apple_watch",
-                  )}
-                </button>
-              ))}
+          {withCode && (
+            <div className="access-choice">
+              <label className="check-row" htmlFor={accessId}>
+                <input
+                  id={accessId}
+                  type="checkbox"
+                  checked={access === "memory"}
+                  onChange={(e) => setAccess(e.target.checked ? "memory" : "capture")}
+                  aria-describedby={accessHintId}
+                />
+                <span>
+                  <strong>{t("pair.memoryOption")}</strong>
+                  <span id={accessHintId} className="hint block">
+                    {access === "memory" ? t("pair.memoryOn") : t("pair.memoryOff")}
+                  </span>
+                </span>
+              </label>
             </div>
-            <div role="tabpanel" className="howto">
-              {client === "extension" && (
+          )}
+
+          <div className={withCode ? "pair" : "pair pair-nocode"}>
+            {withCode && codePanel}
+            <div className="pair-howto howto" aria-live="polite">
+              {target === "extension" && (
                 <ol className="steps">
                   <li>{t("pair.ext1")}</li>
                   <li>
                     {t("pair.ext2")}
-                    <span className="copy-line">
-                      <code>{serverUrl}</code>
-                      <button
-                        type="button"
-                        className="icon-btn"
-                        onClick={() => void copy(serverUrl)}
-                        aria-label={t("pair.copyServer")}
-                      >
-                        <IconCopy size={14} />
-                      </button>
-                    </span>
+                    {copyLine(serverUrl, t("pair.copyServer"))}
                   </li>
                   <li>{t("pair.ext3")}</li>
                 </ol>
               )}
-              {client === "iphone" && (
+              {target === "iphone" && (
                 <ol className="steps">
                   <li>{t("pair.ios1")}</li>
                   <li>{t("pair.ios2")}</li>
                   <li>{t("pair.ios3")}</li>
                 </ol>
               )}
-              {client === "watch" && (
+              {target === "watch" && (
                 <ol className="steps">
                   <li>{t("pair.watch1")}</li>
                   <li>{t("pair.watch2")}</li>
                   <li>{t("pair.watch3")}</li>
                 </ol>
               )}
+              {target === "agent" && (
+                <ol className="steps">
+                  <li>{t("pair.agent1")}</li>
+                  <li>
+                    {t("pair.agent2")}
+                    {code && !expired
+                      ? copyLine(agentCommand(serverUrl, code.code), t("pair.copyCommand"))
+                      : null}
+                  </li>
+                  <li>{t("pair.agent3")}</li>
+                </ol>
+              )}
+              {target === "browser" && (
+                <div className="stack-sm">
+                  <p>{t("pair.browser1")}</p>
+                  <p className="hint">{t("pair.browser2")}</p>
+                  <div className="row">
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => {
+                        onClose();
+                        onListen();
+                      }}
+                    >
+                      <IconMic size={16} /> {t("listen.action")}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-            <p className="hint">
-              {t("pair.singleUse", {
-                time: new Date(code.expiresAt).toLocaleTimeString(
-                  locale === "tr" ? "tr-TR" : "en-GB",
-                  { hour: "2-digit", minute: "2-digit" },
-                ),
-              })}
-            </p>
           </div>
         </div>
-      ) : null}
+      )}
     </Dialog>
   );
 }
 
 export function DevicesPage() {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
+  const fmt = useFmt();
   const qc = useQueryClient();
   const toast = useToast();
   const devices = useDevices();
   const [params, setParams] = useSearchParams();
   const pairing = params.get("pair") === "1";
   const setPairing = (v: boolean) => setParams(v ? { pair: "1" } : {}, { replace: true });
+  const listenRequested = params.get("listen") === "1";
+  const startListen = () => setParams({ listen: "1" }, { replace: true });
   const [editing, setEditing] = useState<Device | null>(null);
   const [revoking, setRevoking] = useState<Device | null>(null);
 
@@ -372,6 +488,8 @@ export function DevicesPage() {
           </button>
         }
       />
+
+      <ListenControl variant="panel" autoStart={listenRequested} />
 
       {devices.isPending ? (
         <Loading />
@@ -411,13 +529,23 @@ export function DevicesPage() {
                     {d.online
                       ? t("devices.now")
                       : d.lastSeenAt
-                        ? formatRelative(Date.parse(d.lastSeenAt), locale)
+                        ? fmt.relative(Date.parse(d.lastSeenAt))
                         : t("devices.never")}
                   </dd>
                 </div>
                 <div>
                   <dt>{t("devices.version")}</dt>
                   <dd>{d.appVersion ?? "—"}</dd>
+                </div>
+                <div>
+                  <dt>{t("devices.access")}</dt>
+                  <dd>
+                    <span className={d.access === "memory" ? "chip chip-task" : "chip chip-quiet"}>
+                      {d.access === "memory"
+                        ? t("devices.accessMemoryShort")
+                        : t("devices.accessCaptureShort")}
+                    </span>
+                  </dd>
                 </div>
                 <div>
                   <dt>{t("devices.priority")}</dt>
@@ -447,11 +575,7 @@ export function DevicesPage() {
       </aside>
 
       <DeviceDialog device={editing} onClose={() => setEditing(null)} />
-      <PairDialog
-        open={pairing}
-        onClose={() => setPairing(false)}
-        knownIds={list.map((d) => d.id)}
-      />
+      <PairDialog open={pairing} onClose={() => setPairing(false)} onListen={startListen} />
       <ConfirmDialog
         open={revoking !== null}
         onClose={() => setRevoking(null)}

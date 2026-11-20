@@ -184,6 +184,36 @@ export const IconSparkle = (p: IconProps) => (
   </Svg>
 );
 
+export const IconCalendar = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="4" y="5" width="16" height="15" rx="2" />
+    <path d="M4 10h16M9 3v4M15 3v4M8 14h3" />
+  </Svg>
+);
+export const IconMore = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="5.5" cy="12" r="1.3" fill="currentColor" />
+    <circle cx="12" cy="12" r="1.3" fill="currentColor" />
+    <circle cx="18.5" cy="12" r="1.3" fill="currentColor" />
+  </Svg>
+);
+export const IconStop = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor" />
+  </Svg>
+);
+export const IconChevron = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="m9 6 6 6-6 6" />
+  </Svg>
+);
+export const IconAgent = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3" y="4" width="18" height="13" rx="1.5" />
+    <path d="m7 9 2.5 2L7 13M12 13h4M9 21h6M12 17v4" />
+  </Svg>
+);
+
 // --- device kinds and audio sources
 
 const IconPuzzle = (p: IconProps) => (
@@ -238,7 +268,7 @@ export function DeviceIcon({ kind, ...p }: IconProps & { kind: DeviceKind | unde
   }
 }
 
-const IconMic = (p: IconProps) => (
+export const IconMic = (p: IconProps) => (
   <Svg {...p}>
     <rect x="9" y="3" width="6" height="11" rx="3" />
     <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" />

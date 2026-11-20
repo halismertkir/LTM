@@ -6,6 +6,8 @@
 import {
   type AskResponse,
   type ConversationDetail,
+  type DayDetail,
+  type DayStatus,
   type Device,
   type Memory,
   type ProviderCatalog,
@@ -14,6 +16,8 @@ import {
   type StreamInfo,
   zAskResponse,
   zConversationDetail,
+  zConversationSummary,
+  zDayDetail,
   zDevice,
   zMemory,
   zProviderCatalog,
@@ -22,6 +26,13 @@ import {
   zStreamInfo,
 } from "@ltm/protocol";
 import { z } from "zod";
+import { dayInZone, zonedTime } from "../src/lib/zone";
+
+/**
+ * The account's zone in every fixture. Deliberately not the browser's: the smoke run sets
+ * the browser to another zone to prove days and times follow the account, not the device.
+ */
+export const FIXTURE_TZ = "Europe/Istanbul";
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -37,15 +48,26 @@ export interface FixtureSet {
   catalog: ProviderCatalog;
   search: SearchResponse;
   ask: AskResponse;
+  /** Digest text per day; the rest of a DayDetail is derived from the conversations. */
+  digests: Record<string, DayDigest>;
+}
+
+export interface DayDigest {
+  status: DayStatus;
+  headline: string | null;
+  summary: string | null;
+  digest: string | null;
+  highlights: string[];
+  decisions: string[];
+  people: string[];
+  statusDetail: string | null;
 }
 
 const iso = (ms: number) => new Date(ms).toISOString();
 
-/** Local-time timestamp `daysAgo` days back at hh:mm, so day grouping is deterministic. */
+/** `hh:mm` on the day `daysAgo` days back, in the account's zone. */
 function at(now: number, daysAgo: number, hh: number, mm: number): number {
-  const d = new Date(now - daysAgo * DAY);
-  d.setHours(hh, mm, 0, 0);
-  return d.getTime();
+  return zonedTime(dayInZone(now - daysAgo * DAY, FIXTURE_TZ), FIXTURE_TZ, hh, mm);
 }
 
 function utterances(
@@ -89,6 +111,7 @@ export function createFixtures(now = Date.now()): FixtureSet {
       id: "dev-laptop",
       name: "Work laptop · Chrome",
       kind: "browser_extension",
+      access: "capture",
       platform: "Chrome 142 · macOS",
       appVersion: "0.1.0",
       priority: null,
@@ -100,6 +123,7 @@ export function createFixtures(now = Date.now()): FixtureSet {
       id: "dev-iphone",
       name: "iPhone",
       kind: "iphone",
+      access: "memory",
       platform: "iOS 26.1",
       appVersion: "0.1.0 (12)",
       priority: null,
@@ -111,6 +135,7 @@ export function createFixtures(now = Date.now()): FixtureSet {
       id: "dev-watch",
       name: "Apple Watch",
       kind: "apple_watch",
+      access: "capture",
       platform: "watchOS 26.1",
       appVersion: "0.1.0 (12)",
       priority: 15,
@@ -161,6 +186,7 @@ export function createFixtures(now = Date.now()): FixtureSet {
     deviceIds: ["dev-laptop", "dev-iphone"],
     utteranceCount: 6,
     openActionItems: 2,
+    interim: false,
     updatedAt: iso(c1Start + 52 * MIN),
     notes: [
       "## Context",
@@ -249,16 +275,19 @@ export function createFixtures(now = Date.now()): FixtureSet {
     status: "open",
     startMs: liveStart,
     endMs: now - 15_000,
-    title: null,
-    summary: null,
-    topics: [],
-    participants: [],
+    title: "Weekly product sync: roadmap and hiring",
+    summary:
+      "So far: the onboarding checklist comes first on the roadmap, and the new flow could ship before the end of the month if design signs off.",
+    topics: ["roadmap", "hiring"],
+    participants: ["You", "Mira"],
     language: "en",
     deviceIds: ["dev-laptop", "dev-iphone"],
     utteranceCount: 41,
     openActionItems: 0,
+    interim: true,
     updatedAt: iso(now - 15_000),
-    notes: null,
+    notes:
+      "## So far\n- Roadmap first, then the hiring update.\n- Onboarding checklist is the first roadmap item.\n- New flow could ship before month end — depends on design sign-off.",
     decisions: [],
     actionItems: [],
     utterances: utterances(
@@ -292,6 +321,7 @@ export function createFixtures(now = Date.now()): FixtureSet {
     deviceIds: ["dev-watch"],
     utteranceCount: 18,
     openActionItems: 0,
+    interim: false,
     updatedAt: iso(c2Start + 15 * MIN),
     notes: null,
     decisions: [],
@@ -320,6 +350,7 @@ export function createFixtures(now = Date.now()): FixtureSet {
     deviceIds: ["dev-laptop"],
     utteranceCount: 64,
     openActionItems: 1,
+    interim: false,
     updatedAt: iso(c3Start + 40 * MIN),
     notes:
       "## Week one\n- Shadow two senior engineers\n- Sandbox account with demo data\n\n## Week two\n- Own the low-priority queue\n- Review the runbooks and file gaps",
@@ -358,6 +389,7 @@ export function createFixtures(now = Date.now()): FixtureSet {
     deviceIds: ["dev-watch", "dev-iphone"],
     utteranceCount: 22,
     openActionItems: 0,
+    interim: false,
     updatedAt: iso(c4Start + 30 * MIN),
     notes: "- Aylin: Lisbon in **March**\n- Books: *The Overstory*, *Piranesi*",
     decisions: [],
@@ -392,6 +424,7 @@ export function createFixtures(now = Date.now()): FixtureSet {
     deviceIds: ["dev-iphone"],
     utteranceCount: 11,
     openActionItems: 0,
+    interim: false,
     updatedAt: iso(c5Start + 10 * MIN),
     notes: null,
     decisions: [],
@@ -512,7 +545,14 @@ export function createFixtures(now = Date.now()): FixtureSet {
       audioRetentionDays: null,
       dataRetentionDays: null,
     },
-    pipeline: { language: null, conversationGapMinutes: 5, extractMemories: true },
+    pipeline: {
+      language: null,
+      conversationGapMinutes: 5,
+      extractMemories: true,
+      liveNotesMinutes: 15,
+      dailyDigest: true,
+      timeZone: FIXTURE_TZ,
+    },
   });
 
   const catalog = zProviderCatalog.parse({
@@ -650,7 +690,72 @@ export function createFixtures(now = Date.now()): FixtureSet {
       .sort((a, b) => (a.type === "memory" ? -1 : b.type === "memory" ? 1 : 0)),
   });
 
-  return { now, devices, streams, conversations, memories, settings, catalog, search, ask };
+  const today = dayInZone(now, FIXTURE_TZ);
+  const day = (ms: number) => dayInZone(ms, FIXTURE_TZ);
+  const digests: Record<string, DayDigest> = {
+    [today]: {
+      status: "ready",
+      headline: "Pricing settled; the product sync is still going",
+      summary:
+        "The pricing page will lead with the yearly plan and the launch stays on the 4th. The weekly product sync is still running and has covered the roadmap so far.",
+      digest: [
+        "### Morning",
+        "- **Stand-up** — notes are still being written.",
+        "- **Pricing review** with Mira and Deniz: yearly plan first, comparison table to be reworked for mobile.",
+        "",
+        "### Afternoon",
+        "- **Weekly product sync** (still going): onboarding checklist first on the roadmap.",
+        "",
+        "<img src=https://tracker.example/pixel.gif> Remote images are stripped.",
+      ].join("\n"),
+      highlights: [
+        "Pricing page leads with the yearly plan",
+        "Launch date stays on the 4th",
+        "New onboarding flow could ship before month end",
+      ],
+      decisions: [
+        "Lead with the yearly plan on the pricing page.",
+        "Keep the launch date on the 4th.",
+      ],
+      people: ["Mira", "Deniz"],
+      statusDetail: null,
+    },
+    [day(c3Start)]: {
+      status: "ready",
+      headline: "Onboarding plan for support, and lunch with Aylin",
+      summary:
+        "Planned the first two weeks for the new support engineer with Deniz as buddy. Lunch with Aylin: Lisbon in March and two book recommendations.",
+      digest:
+        "- **Onboarding plan**: shadowing, sandbox account, runbook review.\n- **Lunch with Aylin**: *Piranesi* and *The Overstory*; she prefers trains for short trips.",
+      highlights: ["Deniz is the onboarding buddy", "Aylin recommended Piranesi"],
+      decisions: ["Deniz is the onboarding buddy."],
+      people: ["Deniz", "Aylin"],
+      statusDetail: null,
+    },
+    [day(c5Start)]: {
+      status: "unavailable",
+      headline: null,
+      summary: null,
+      digest: null,
+      highlights: [],
+      decisions: [],
+      people: [],
+      statusDetail: "The language model at http://localhost:11434/v1 did not answer within 60 s.",
+    },
+  };
+
+  return {
+    now,
+    devices,
+    streams,
+    conversations,
+    memories,
+    settings,
+    catalog,
+    search,
+    ask,
+    digests,
+  };
 }
 
 function mem(
@@ -675,4 +780,52 @@ function mem(
     createdAt: iso(at + 50 * MIN),
     updatedAt: iso(at + 50 * MIN),
   };
+}
+
+/**
+ * A day as the server would report it: digest text from `fx.digests`, everything else
+ * derived from the conversations that started on that day in the account's zone.
+ */
+export function buildDay(fx: FixtureSet, date: string): DayDetail {
+  const tz = fx.settings.pipeline.timeZone;
+  const convs = fx.conversations
+    .filter((c) => dayInZone(c.startMs, tz) === date)
+    .sort((a, b) => a.startMs - b.startMs);
+  const d = fx.digests[date];
+  const status: DayStatus = !fx.settings.pipeline.dailyDigest
+    ? "none"
+    : (d?.status ?? (convs.length ? "pending" : "none"));
+  const lastUpdate =
+    convs
+      .map((c) => c.updatedAt)
+      .sort()
+      .at(-1) ?? null;
+  return zDayDetail.parse({
+    date,
+    status,
+    headline: d?.headline ?? null,
+    summary: d?.summary ?? null,
+    conversationCount: convs.length,
+    speechMinutes: Math.round(convs.reduce((n, c) => n + (c.endMs - c.startMs), 0) / 60_000),
+    openActionItems: convs.reduce((n, c) => n + c.actionItems.filter((a) => !a.done).length, 0),
+    updatedAt: lastUpdate,
+    timeZone: tz,
+    digest: d?.digest ?? null,
+    highlights: d?.highlights ?? [],
+    decisions: d?.decisions ?? [],
+    people: d?.people ?? [],
+    conversations: convs.map((c) => zConversationSummary.parse(c)),
+    actionItems: convs.flatMap((c) =>
+      c.actionItems
+        .filter((a) => !a.done)
+        .map((a) => ({ ...a, conversationId: c.id, conversationTitle: c.title })),
+    ),
+    statusDetail: d?.statusDetail ?? null,
+  });
+}
+
+/** Every day with at least one conversation, newest first (as the server lists them). */
+export function listDays(fx: FixtureSet): string[] {
+  const tz = fx.settings.pipeline.timeZone;
+  return [...new Set(fx.conversations.map((c) => dayInZone(c.startMs, tz)))].sort().reverse();
 }

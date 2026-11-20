@@ -35,10 +35,10 @@ export function renderMarkdown(src: string): string {
   });
 }
 
-/** Turn `[3]` citation markers into in-page links to `#cite-3` before rendering. */
-export function linkCitations(markdown: string, count: number): string {
+/** Turn `[3]` citation markers into in-page links to `#<prefix>-3` before rendering. */
+export function linkCitations(markdown: string, count: number, prefix = "cite"): string {
   return markdown.replace(/\[(\d{1,3})\](?!\(|:)/g, (m, n: string) => {
     const i = Number(n);
-    return i >= 1 && i <= count ? `[\\[${i}\\]](#cite-${i})` : m;
+    return i >= 1 && i <= count ? `[\\[${i}\\]](#${prefix}-${i})` : m;
   });
 }

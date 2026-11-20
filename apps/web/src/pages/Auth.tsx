@@ -7,6 +7,7 @@ import { IconShield } from "../components/Icons";
 import { Wordmark } from "../components/Shell";
 import { ErrorNote } from "../components/ui";
 import { useI18n } from "../i18n";
+import { browserTimeZone } from "../lib/zone";
 
 type Mode = "setup" | "login" | "register";
 
@@ -39,7 +40,14 @@ export function AuthScreen({
     meta: { inline: true },
     mutationFn: async () => {
       if (mode === "login") return api.login({ email, password });
-      const body = { email, password, displayName: displayName.trim(), locale: accountLocale };
+      // The browser's zone decides where the account's days begin; changeable in settings.
+      const body = {
+        email,
+        password,
+        displayName: displayName.trim(),
+        locale: accountLocale,
+        timeZone: browserTimeZone(),
+      };
       return mode === "setup" ? api.setup(body) : api.register(body);
     },
     onSuccess: async () => {
