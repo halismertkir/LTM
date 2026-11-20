@@ -20,11 +20,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Install ffmpeg (the capture agent's tests drive the real binary)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - name: No secrets in the tree
         run: pnpm check:secrets
       - run: pnpm lint
