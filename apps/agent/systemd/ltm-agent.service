@@ -1,0 +1,37 @@
+# systemd *user* unit for the LTM capture agent.
+#
+#   mkdir -p ~/.config/systemd/user
+#   cp ltm-agent.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now ltm-agent
+#   loginctl enable-linger "$USER"     # keep it running while you are logged out
+#   journalctl --user -u ltm-agent -f  # logs
+#
+# Pair and accept consent first (as the same user):
+#   ltm-agent pair --server https://ltm.example.org --code XXXX-XXXX
+#   ltm-agent consent
+[Unit]
+Description=LTM capture agent (always-on microphone)
+Documentation=file:///usr/share/doc/ltm-agent/README.md
+# A user unit runs in your session, where PulseAudio/PipeWire is available.
+After=pipewire-pulse.service pulseaudio.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adjust the path if ltm-agent is not on the user PATH, e.g. /usr/local/bin/ltm-agent or
+# `/usr/bin/node /opt/ltm/ltm-agent.mjs`. Add capture options as needed:
+#   ExecStart=%h/.local/bin/ltm-agent run --source ambient --language tr --title "Living room"
+ExecStart=%h/.local/bin/ltm-agent run
+Restart=always
+RestartSec=10
+# Exit 2 (bad configuration) and 3 (consent missing, capture paused, device removed) need a
+# person: do not restart in a loop, fix it and `systemctl --user restart ltm-agent`.
+RestartPreventExitStatus=2 3
+# SIGTERM ends the stream cleanly (end → closed); give it time to flush.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

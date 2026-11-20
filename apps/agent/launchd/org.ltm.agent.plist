@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Example LaunchAgent for the LTM capture agent on macOS (runs in your login session, which
+  is what microphone access needs).
+
+    cp org.ltm.agent.plist ~/Library/LaunchAgents/
+    # edit the paths below (node, ltm-agent.mjs, ffmpeg) to match your machine
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/org.ltm.agent.plist
+    launchctl kickstart -k gui/$(id -u)/org.ltm.agent      # restart
+    launchctl bootout gui/$(id -u)/org.ltm.agent            # stop and unload
+
+  The first run triggers macOS's microphone prompt for the program that runs ffmpeg; allow
+  it in System Settings → Privacy & Security → Microphone. Run `ltm-agent pair` and
+  `ltm-agent consent` once by hand first (see README.md).
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>org.ltm.agent</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>/usr/local/lib/ltm-agent/ltm-agent.mjs</string>
+    <string>run</string>
+    <string>--ffmpeg</string>
+    <string>/opt/homebrew/bin/ffmpeg</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <!-- Restart whenever it exits with an error. launchd cannot exempt exit codes 2/3 ("a person
+       has to act": consent missing, capture paused, device removed), so in that state it retries
+       every ThrottleInterval seconds; the log says what to fix. -->
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+    <key>Crashed</key>
+    <true/>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>StandardErrorPath</key>
+  <string>/tmp/ltm-agent.log</string>
+  <key>StandardOutPath</key>
+  <string>/tmp/ltm-agent.log</string>
+</dict>
+</plist>
