@@ -95,7 +95,9 @@ struct DayContent: View {
         }
         if !detail.decisions.isEmpty {
             Section(L("reader.decisions")) {
-                ForEach(detail.decisions, id: \.self) { Label { Text(MarkdownView.inline($0)) } icon: { Image(systemName: "checkmark.seal") } }
+                ForEach(detail.decisions, id: \.self) { decision in
+                    Label { Text(MarkdownView.inline(decision)) } icon: { Image(systemName: "checkmark.seal") }
+                }
             }
         }
         if !detail.actionItems.isEmpty {
