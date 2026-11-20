@@ -6,7 +6,8 @@ import { isProviderError } from "../errors.js";
 import { isSignificant, likePattern, queryTokens, wordColumn } from "./conversations.js";
 
 /** Reciprocal-rank-fusion constant (the usual 60). */
-const RRF_K = 60;
+/** Most a keyword match can add to a cosine similarity (which lives in 0..1). */
+const KEYWORD_BONUS = 0.2;
 const ALL_TYPES: SearchHitType[] = ["memory", "conversation", "utterance"];
 
 export interface SearchOptions {
@@ -223,8 +224,8 @@ export interface SearchResult {
 }
 
 /**
- * Hybrid search: keyword and vector lists fused by reciprocal rank (score normalised so a
- * hit ranked first in both lists scores 1). Without an embedding provider: keyword only.
+ * Hybrid search: cosine similarity plus a keyword bonus. Without an embedding provider:
+ * keyword only.
  */
 export async function search(
   ctx: Ctx,
@@ -256,26 +257,25 @@ export async function search(
         .map(({ raw, ...h }) => ({ ...h, score: Math.max(0, Math.min(1, raw)) })),
     };
   }
-  // Weighted reciprocal-rank fusion: a keyword hit counts in proportion to how much of the
-  // query it matched, so a row sharing one word with the query cannot outrank the best
-  // semantic match; ties go to the higher cosine similarity.
-  const fused = new Map<string, { hit: Omit<Ranked, "raw">; score: number; sim: number }>();
-  const addList = (list: Ranked[], weighted: boolean, isVector: boolean) => {
-    list.forEach((h, rank) => {
-      const key = `${h.type}:${h.id}`;
-      const { raw, ...hit } = h;
-      const entry = fused.get(key) ?? { hit, score: 0, sim: -1 };
-      entry.score += (weighted ? Math.max(0, Math.min(1, raw)) : 1) / (RRF_K + rank + 1);
-      if (isVector) entry.sim = raw;
-      fused.set(key, entry);
-    });
-  };
-  addList(kw, true, false);
-  addList(vec, false, true);
-  const max = 2 / (RRF_K + 1);
+  // Fusion by similarity, not by rank. Rank fusion treats the 1st and the 5th vector hit
+  // as almost equal, so any row sharing a single ordinary word with the query ("zaman")
+  // used to leapfrog the best semantic match. Here cosine similarity is the base score
+  // and keyword overlap adds a bonus that grows with the square of the share of the query
+  // it covers: a full phrase match lifts a row clearly, one shared word barely moves it.
+  const fused = new Map<string, { hit: Omit<Ranked, "raw">; score: number }>();
+  const floor = vec.length > 0 ? Math.max(0, Math.min(...vec.map((v) => v.raw)) - 0.05) : 0;
+  for (const { raw, ...hit } of vec) fused.set(`${hit.type}:${hit.id}`, { hit, score: raw });
+  for (const { raw, ...hit } of kw) {
+    const share = Math.max(0, Math.min(1, raw));
+    const bonus = KEYWORD_BONUS * share * share;
+    const key = `${hit.type}:${hit.id}`;
+    const entry = fused.get(key);
+    if (entry) entry.score += bonus;
+    else fused.set(key, { hit, score: floor + bonus });
+  }
   const hits = [...fused.values()]
-    .sort((a, b) => b.score - a.score || b.sim - a.sim)
+    .sort((a, b) => b.score - a.score)
     .slice(0, opts.limit)
-    .map((e) => ({ ...e.hit, score: Math.min(1, e.score / max) }));
+    .map((e) => ({ ...e.hit, score: Math.max(0, Math.min(1, e.score)) }));
   return { mode: "hybrid", hits };
 }

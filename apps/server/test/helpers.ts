@@ -82,7 +82,7 @@ export class FakeLlm implements LlmProvider {
   };
   /** Day digests are answered separately so conversation handlers stay simple. */
   digest: (req: LlmJsonRequest<unknown>) => unknown = (req) => ({
-    headline: `Digest of ${/Day: (\S+)/.exec(req.prompt)?.[1] ?? "?"}`,
+    headline: `Digest of ${/Day: \w+, (\d{4}-\d{2}-\d{2})/.exec(req.prompt)?.[1] ?? "?"}`,
     summary: "A day of conversations.",
     digest: "## The day\n- Things happened.",
     highlights: ["Something important"],

@@ -34,6 +34,12 @@ your hardware runs comfortably. Models that cannot produce reliable JSON will ma
 consolidation fail more often — LTM validates and retries, then falls back to
 "transcript only".
 
+Local inference is slow next to a hosted API, especially without a GPU, so requests get
+generous time limits: ten minutes for the language model, five for speech-to-text
+(`LTM_LLM_TIMEOUT_MS`, `LTM_STT_TIMEOUT_MS`, `LTM_EMBEDDING_TIMEOUT_MS`). LTM also decides
+the language of the notes itself — from what was spoken — and tells the model explicitly,
+because small models otherwise drift into English.
+
 For the strongest privacy, combine this with **on-device transcription** in the capture
 clients: audio then never leaves the device that heard it.
 

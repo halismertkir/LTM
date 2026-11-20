@@ -244,7 +244,7 @@ describe("daily digests in the user's time zone", () => {
     }
     const calls = t.fakes.llm.callsOf("day_digest");
     expect(calls).toHaveLength(2);
-    const nov19 = calls.find((c) => c.prompt.includes("Day: 2026-11-19"))!;
+    const nov19 = calls.find((c) => c.prompt.includes("Day: Thursday, 2026-11-19"))!;
     expect(nov19.prompt).toContain("Gece planı");
     expect(nov19.prompt).toContain('"from": "23:50"');
     expect(nov19.prompt).not.toContain("bu gece plan yapıyoruz"); // titles and summaries, never transcripts
@@ -303,7 +303,7 @@ describe("daily digests in the user's time zone", () => {
     await run(t, 5 * MIN);
     const calls = t.fakes.llm.callsOf("day_digest");
     expect(calls).toHaveLength(n + 2);
-    expect(calls.at(-1)!.prompt).toContain("Day: 2026-11-19");
+    expect(calls.at(-1)!.prompt).toContain("Day: Thursday, 2026-11-19");
     expect((await t.api.get("/days/2026-11-19", { token })).body.status).toBe("ready");
     expect((await t.api.post("/days/2001-01-01/regenerate", undefined, { token })).status).toBe(
       404,

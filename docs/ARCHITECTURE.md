@@ -192,6 +192,7 @@ claimed by an in-process worker — no Redis or broker.
 | `LTM_ALLOW_REGISTRATION` | `false` | Allow sign-ups after the first (owner) account. |
 | `LTM_ALLOW_CLI_PROVIDERS` | `true` | Offer `claude_code_cli` / `codex_cli` to the owner. |
 | `LTM_{LLM,STT,EMBEDDING}_{KIND,MODEL,BASE_URL,API_KEY}` | unset | Instance-default provider per role. |
+| `LTM_{LLM,STT,EMBEDDING}_TIMEOUT_MS` | `600000` / `300000` / `120000` | Per-request time limit per role; generous because local inference is slow. |
 | `LTM_WEB_DIR` | bundled | Directory of the built web app to serve at `/`. |
 | `LTM_LOG_LEVEL` | `info` | pino level. Transcript text is never logged above `debug`. |
 

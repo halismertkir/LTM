@@ -604,7 +604,7 @@ export const en = {
   "pair.agent1": "Install the LTM capture agent on the computer that has the microphone.",
   "pair.agent2": "Run this command there:",
   "pair.agent3":
-    "Leave the agent running; it keeps listening in the background and shows up here as a device.",
+    "Then start it with `ltm-agent run` (or install the bundled systemd/launchd service). It keeps listening in the background and shows up here as a device.",
   "pair.copyCommand": "Copy command",
   "pair.browser1":
     "Use the browser you are reading this in as a microphone. No code is needed: it pairs itself as a capture-only device.",

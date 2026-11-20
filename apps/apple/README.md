@@ -21,11 +21,11 @@ apps/apple/
 >   capture policy/state/coordinator, consent catalog, reader view models. `swift build`
 >   is warning-free (also with `-strict-concurrency=complete`) and `swift test` runs
 >   102 tests green.
-> - **Verified by CI once the workflow is green** (`.github/workflows/apple.yml`, macOS):
->   `swift test` on macOS and unsigned simulator builds of the `LTMiOS` and `LTMWatch`
->   schemes — which is the only compiler that sees the SwiftUI screens and the
->   Apple-only layers (AVFoundation capture, Speech, WatchConnectivity, Keychain,
->   background `URLSession`, App Intents).
+> - **Verified by CI on macOS** (`.github/workflows/apple.yml`, green): `swift test` on
+>   macOS and unsigned simulator builds of the `LTMiOS` and `LTMWatch` schemes — the
+>   compiler that sees the SwiftUI screens and the Apple-only layers (AVFoundation
+>   capture, Speech, WatchConnectivity, Keychain, background `URLSession`, App Intents).
+>   This proves the apps compile and link; it does not run them.
 > - **Needs a physical device**: audio-session behaviour with the screen locked and
 >   after interruptions, the watch's background recording and battery cost,
 >   WatchConnectivity transfers between real devices, on-device speech recognition, and

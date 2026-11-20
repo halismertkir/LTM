@@ -146,6 +146,10 @@ Your phone, your watch and your browser send recordings of your conversations to
 server. Over plain HTTP anyone on the network path can read them, browsers will not send
 the session cookie securely, and iOS refuses non-local plain-HTTP connections.
 
+Browsers also refuse microphone access and app installation on plain-HTTP pages, so
+**Listen with this device** and installing the web app on a phone only work over HTTPS
+(or on `localhost`).
+
 Put a TLS-terminating reverse proxy in front and set:
 
 ```bash

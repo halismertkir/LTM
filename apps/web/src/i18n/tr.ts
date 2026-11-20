@@ -600,7 +600,8 @@ export const tr: Record<MessageKey, string> = {
   "pair.pairedLeadMemory": "Kayıt yapabilir ve belleğinizi okuyup ona soru sorabilir.",
   "pair.agent1": "Mikrofonun bağlı olduğu bilgisayara LTM kayıt ajanını kurun.",
   "pair.agent2": "Orada şu komutu çalıştırın:",
-  "pair.agent3": "Ajanı çalışır bırakın; arka planda dinler ve burada bir cihaz olarak görünür.",
+  "pair.agent3":
+    "Ardından `ltm-agent run` ile başlatın (veya birlikte gelen systemd/launchd servisini kurun). Arka planda dinlemeye devam eder ve burada bir cihaz olarak görünür.",
   "pair.copyCommand": "Komutu kopyala",
   "pair.browser1":
     "Şu an kullandığınız tarayıcıyı mikrofon olarak kullanın. Kod gerekmez: kendini yalnızca kayıt yapan bir cihaz olarak eşleştirir.",

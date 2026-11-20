@@ -17,14 +17,16 @@ anıları yazdırır. Kendi sunucunuzda çalışır; konuşmalarınız sizin mak
 
 | Uygulama | Konum | Ne yapar |
 | --- | --- | --- |
-| **Sunucu** | [`apps/server`](apps/server) | Sesi ve dökümleri alır, konuşmayı metne çevirir, cihazları birleştirir, LLM ile özetler, belleğinizi saklar ve arar. Tek süreç; varsayılan olarak gömülü veritabanı. |
-| **Web paneli** | [`apps/web`](apps/web) | Zaman çizelgesi, görüşme notları ve dökümleri, anılar, arama ve "sor", cihaz eşleştirme, sağlayıcı ve gizlilik ayarları. |
+| **Sunucu** | [`apps/server`](apps/server) | Sesi ve dökümleri alır, konuşmayı metne çevirir, cihazları birleştirir, LLM ile notları ve günlük özetleri yazar, belleğinizi saklar ve arar. Tek süreç; varsayılan olarak gömülü veritabanı. |
+| **Web uygulaması** | [`apps/web`](apps/web) | Bugünün özeti, zaman akışı, notlar ve dökümler, anılar, arama ve "sor", cihaz eşleştirme, sağlayıcı ve gizlilik ayarları. Telefona uygulama gibi kurulabilir; herhangi bir tarayıcı mikrofon olarak kullanılabilir. |
 | **Chrome eklentisi** | [`apps/extension`](apps/extension) | Toplantı sekmesinin (Meet, Zoom, Teams…) sesini ve mikrofonunuzu yakalar. |
-| **iPhone uygulaması** | [`apps/apple`](apps/apple) | Masa başında olmadığınız konuşmaları yakalar; isteğe bağlı cihaz üzerinde yazıya dökme. |
+| **Yakalama ajanı** | [`apps/agent`](apps/agent) | Linux, macOS veya Windows'ta bir mikrofonu gün boyu dinleyen küçük bir arka plan servisi. |
+| **iPhone uygulaması** | [`apps/apple`](apps/apple) | Masa başında olmadığınızda kaydeder (isteğe bağlı cihaz üzerinde yazıya dökme) ve tam bir okuyucudur: günler, görüşmeler, anılar, soru sorma. |
 | **Apple Watch uygulaması** | [`apps/apple`](apps/apple) | Bileğinizden kaydeder; doğrudan veya telefon üzerinden eşitler. |
 
 Ortak kod: [`packages/protocol`](packages/protocol) (iletişim sözleşmesi),
-[`packages/core`](packages/core) (çok cihazlı birleştirme, VAD) ve
+[`packages/core`](packages/core) (çok cihazlı birleştirme, VAD),
+[`packages/capture`](packages/capture) (JavaScript istemcilerinin ses hattı) ve
 [`packages/providers`](packages/providers) (model bağdaştırıcıları).
 
 ## Nasıl çalışır
@@ -40,9 +42,12 @@ cihazlar ──ses / cihaz üzerinde döküm──► sunucu
   farklı kesim noktalarına, farklı tanıma sonuçlarına ve saat farklarına rağmen bunun
   aynı konuşma olduğunu anlar, en iyi sürümü tutar ve yalnızca tek cihazın duyduğunu asla
   atmaz. Geç eşitlenen cihazlar dökümü sonradan iyileştirir.
+- **Gün boyu, siz yaşarken özet.** Açık bırakın: konuşmalar sessizliklerde kendiliğinden
+  ayrılır, bir konuşma sürerken notları birkaç dakikada bir yeniden yazılır ve her günün
+  kararları ve açık işleriyle birlikte bir özeti çıkar.
 - **Yalnızca tutanak değil, bellek.** Görüşme notlarının ötesinde LTM; kendi başına
-  anlamlı olguları, tercihleri, verilen sözleri ve kararları arayıp sorgulayabileceğiniz
-  uzun süreli bir belleğe çıkarır.
+  anlamlı olguları, tercihleri, verilen sözleri ve kararları, web uygulamasından ya da
+  telefonunuzdan arayıp sorgulayabileceğiniz uzun süreli bir belleğe çıkarır.
 - **Modeller sizin.** Tamamen yerel modeller, kendi API anahtarınız (BYOK) veya resmî
   komut satırı aracı üzerinden Claude / ChatGPT aboneliğiniz — her rol için ayrı ayrı.
   Bkz. [`docs/PROVIDERS.md`](docs/PROVIDERS.md).
@@ -78,11 +83,19 @@ Geliştirme (`pnpm dev`, testler, eklentiyi yükleme, Apple uygulamalarını der
 
 ## Durum
 
-Erken aşama. Sunucu, web uygulaması ve eklenti CI'da derlenip test edilir. iOS ve watchOS
-uygulamalarının kaynak kodu tamdır ancak bir Mac'te Xcode ile derlenip imzalanmaları
-gerekir; nelerin doğrulanıp nelerin doğrulanmadığı
-[`apps/apple/README.md`](apps/apple/README.md) dosyasındadır. Konuşmacı ayrıştırma, uçtan
-uca şifreleme ve Android/masaüstü istemcileri henüz yoktur.
+Erken aşama, ama zincirin tamamı gerçekten çalıştırıldı:
+
+- **Sunucu, web uygulaması, eklenti, yakalama ajanı** — CI'da birim ve entegrasyon
+  testleri; ayrıca uçtan uca çalıştırmalar: derlenmiş eklenti Chromium'da derlenmiş
+  sunucuya karşı, gerçek konuşma gönderen ajan ve eksiksiz Docker Compose yığını (LTM,
+  pgvector'lü PostgreSQL, Speaches ile Whisper, Ollama ile yerel model): iki cihazdan
+  gelen Türkçe konuşma tek döküme, notlara, günlük özete, aramaya ve yanıtlara dönüştü.
+- **iPhone ve saat uygulamaları** — CI'da macOS üzerinde derlendi ve birim testlerinden
+  geçti (imzasız simülatör derlemeleri). Fiziksel cihazda henüz çalıştırılmadı: arka plan
+  ses kaydı, saat kaydı ve telefon–saat aktarımı bunu gerektirir. Bkz.
+  [`apps/apple/README.md`](apps/apple/README.md).
+- Henüz yok: konuşmacı ayrıştırma, uçtan uca şifreleme, Android, tarayıcıda cihaz
+  üzerinde yazıya dökme.
 
 ## Lisans
 

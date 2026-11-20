@@ -44,8 +44,10 @@ welcome.
 
 ## Development setup
 
-Requirements: Node.js 22+, pnpm 10+. For the Apple apps: a Mac with Xcode 16+ and
-[XcodeGen](https://github.com/yonaskolb/XcodeGen).
+Requirements: Node.js 22+, pnpm 10+ and `ffmpeg` on the PATH (the capture agent and its
+tests use it). For the Apple apps: a Mac with Xcode and
+[XcodeGen](https://github.com/yonaskolb/XcodeGen); the platform-neutral part of the
+Swift package also builds and tests on Linux with `swift test`.
 
 ```bash
 pnpm install
@@ -69,8 +71,9 @@ stores it; configure providers in **Settings → AI providers**, or see
 | Build everything | `pnpm build` |
 | Scan for secrets | `pnpm check:secrets` |
 | End-to-end: extension ↔ server in Chromium | `node scripts/e2e/extension.mjs` (after `pnpm build`; needs Playwright) |
+| End-to-end: capture agent ↔ server with real ffmpeg | `node scripts/e2e/agent.mjs` (after `pnpm build`) |
 | End-to-end: multi-device pipeline with a real model | `ANTHROPIC_API_KEY=… node scripts/e2e/pipeline.mjs` (after `pnpm build`; spends a few cents) |
-| Work on one package | `pnpm --filter @ltm/server test` (or `@ltm/web`, `@ltm/extension`, `@ltm/core`, `@ltm/providers`, `@ltm/protocol`) |
+| Work on one package | `pnpm --filter @ltm/server test` (or `@ltm/web`, `@ltm/extension`, `@ltm/agent`, `@ltm/capture`, `@ltm/core`, `@ltm/providers`, `@ltm/protocol`) |
 
 Where things live is described in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Each
 app has its own README with details (loading the extension unpacked, generating the Xcode

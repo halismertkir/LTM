@@ -42,3 +42,20 @@ export function localTime(ms: number, tz: string): string {
   const p = canonicalTimeZone(tz) ? parts(ms, tz) : parts(ms, "UTC");
   return `${p.hour}:${p.minute}`;
 }
+
+/**
+ * "Friday, 2026-11-20" for a calendar date. Models get the weekday from here because
+ * small ones guess it wrong, and "by Friday" can only be resolved against a known weekday.
+ */
+export function weekdayLabel(date: string): string {
+  const d = new Date(`${date}T12:00:00Z`);
+  if (Number.isNaN(d.getTime())) return date;
+  const weekday = new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: "UTC" }).format(d);
+  return `${weekday}, ${date}`;
+}
+
+/** "Friday, 2026-11-20 10:05 (Europe/Istanbul)" for the instant `ms`. */
+export function localStamp(ms: number, tz: string): string {
+  const zone = canonicalTimeZone(tz) ?? "UTC";
+  return `${weekdayLabel(localDate(ms, zone))} ${localTime(ms, zone)} (${zone})`;
+}

@@ -397,6 +397,7 @@ export async function runConsolidate(
     sources: [...new Set(utterances.flatMap((u) => u.sources))],
     contexts: conv.contexts ?? [],
     knownMemories: known.map((k) => k.content),
+    timeZone: pipeline.timeZone,
   };
   const lines = formatTranscriptLines(
     utterances.map((u) => ({ startMs: u.start_ms, speaker: u.speaker, text: u.text })),
@@ -509,6 +510,7 @@ export async function runLiveNotes(
     sources: [...new Set(utterances.flatMap((u) => u.sources))],
     contexts: conv.contexts ?? [],
     knownMemories: [],
+    timeZone: pipeline.timeZone,
   };
   const account = await accountOf(ctx, userId);
   const spoken = spokenLanguage(utterances);

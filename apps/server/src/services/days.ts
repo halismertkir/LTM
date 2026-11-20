@@ -6,7 +6,7 @@ import { badRequest, isProviderError } from "../errors.js";
 import { decideLanguage, dominantLanguage, languageDirective } from "../pipeline/language.js";
 import { digestSystemPrompt, zDayDigestOut } from "../pipeline/prompts.js";
 import type { JobHandler } from "../pipeline/worker.js";
-import { localDate, localTime } from "../time.js";
+import { localDate, localTime, weekdayLabel } from "../time.js";
 import {
   type ActionItemRow,
   type ConversationRow,
@@ -400,7 +400,7 @@ export async function runDigest(
     language: c.language,
   }));
   const omitted = convs.length - input.length;
-  const prompt = `Day: ${date} (time zone ${tz}). ${convs.length} conversation(s)${omitted > 0 ? `, ${omitted} without notes not shown` : ""}.\n\n<conversations>\n${JSON.stringify(input, null, 1)}\n</conversations>`;
+  const prompt = `Day: ${weekdayLabel(date)} (time zone ${tz}). ${convs.length} conversation(s)${omitted > 0 ? `, ${omitted} without notes not shown` : ""}.\n\n<conversations>\n${JSON.stringify(input, null, 1)}\n</conversations>`;
   const owner = await one<{ locale: string }>(ctx.db, "SELECT locale FROM users WHERE id = $1", [
     userId,
   ]);

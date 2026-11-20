@@ -16,14 +16,16 @@ you would otherwise lose. You run it yourself; your conversations stay on your m
 
 | App | Where | What it does |
 | --- | --- | --- |
-| **Server** | [`apps/server`](apps/server) | Ingests audio and transcripts, runs speech-to-text, merges devices, consolidates with an LLM, stores and searches your memory. One process, embedded database by default. |
-| **Web dashboard** | [`apps/web`](apps/web) | Timeline, conversation notes and transcripts, memories, search and "ask", device pairing, provider and privacy settings. |
+| **Server** | [`apps/server`](apps/server) | Ingests audio and transcripts, runs speech-to-text, merges devices, writes notes and daily digests with an LLM, stores and searches your memory. One process, embedded database by default. |
+| **Web app** | [`apps/web`](apps/web) | Today's digest, timeline, notes and transcripts, memories, search and "ask", device pairing, provider and privacy settings. Installable on a phone as an app, and any browser can act as a microphone. |
 | **Chrome extension** | [`apps/extension`](apps/extension) | Captures the audio of a meeting tab (Meet, Zoom, Teams, …) and your microphone. |
-| **iPhone app** | [`apps/apple`](apps/apple) | Captures conversations away from the desk; optional on-device transcription. |
+| **Capture agent** | [`apps/agent`](apps/agent) | A small daemon that listens on a microphone all day on Linux, macOS or Windows. |
+| **iPhone app** | [`apps/apple`](apps/apple) | Captures away from the desk (optionally transcribing on the device) and is a full reader: days, conversations, memories, ask. |
 | **Apple Watch app** | [`apps/apple`](apps/apple) | Captures from your wrist and syncs directly or through the phone. |
 
 Shared code lives in [`packages/protocol`](packages/protocol) (the wire contract),
-[`packages/core`](packages/core) (multi-device merge, VAD) and
+[`packages/core`](packages/core) (multi-device merge, VAD),
+[`packages/capture`](packages/capture) (the audio pipeline of the JavaScript clients) and
 [`packages/providers`](packages/providers) (model adapters).
 
 ## How it works
@@ -39,9 +41,12 @@ devices ──audio / on-device transcripts──► server
   sentence, LTM recognises it as the same speech despite different cut points, wording
   and clocks, keeps the best rendition, and never drops what only one device heard.
   Devices that sync late simply improve the transcript.
+- **Summaries while you live your day.** Leave it on: conversations split themselves at
+  silences, notes are rewritten every few minutes while a conversation is still going,
+  and every day gets a digest with its decisions and open tasks.
 - **Memory, not just minutes.** Beyond per-conversation notes, LTM extracts
   self-contained facts, preferences, commitments and decisions into a long-term memory
-  you can search and question.
+  you can search and question — from the web app or from your phone.
 - **Your models.** Fully local models, your own API key, or your Claude / ChatGPT
   subscription through the vendor's official CLI — per role, mix and match. See
   [`docs/PROVIDERS.md`](docs/PROVIDERS.md).
@@ -77,10 +82,18 @@ For development (`pnpm dev`, tests, loading the extension, building the Apple ap
 
 ## Status
 
-Early. The server, web app and extension are built and tested in CI. The iOS and
-watchOS apps are source-complete but must be built and signed with Xcode on a Mac; see
-[`apps/apple/README.md`](apps/apple/README.md) for what has and has not been verified.
-Speaker diarization, end-to-end encryption and Android/desktop clients are not there yet.
+Early, but the whole chain has been run for real:
+
+- **Server, web app, extension, capture agent** — unit and integration tests in CI, plus
+  end-to-end runs: the built extension in Chromium against the built server, the agent
+  streaming real speech, and the complete Docker Compose stack (LTM, PostgreSQL with
+  pgvector, Whisper via Speaches, a local model via Ollama) transcribing Turkish speech
+  from two devices into one transcript with notes, digests, search and answers.
+- **iPhone and watch apps** — compiled and unit-tested on macOS in CI (unsigned simulator
+  builds). Not yet run on physical devices: background audio, watch recording and
+  phone–watch transfers still need that. See [`apps/apple/README.md`](apps/apple/README.md).
+- Not there yet: speaker diarization, end-to-end encryption, Android, on-device
+  transcription in the browser.
 
 ## License
 
