@@ -85,13 +85,17 @@ targets:
         SKIP_INSTALL: YES
 
 schemes:
+  # Only the iOS app is a build target here. The watch app is built and embedded through
+  # the LTMiOS target's dependency; listing it in this scheme as well made xcodebuild
+  # resolve the scheme's destinations from the watch target (targets are ordered by name,
+  # and "LTMWatch" sorts before "LTMiOS"), offering watchOS simulators only.
   LTMiOS:
     build:
       targets:
         LTMiOS: all
-        LTMWatch: all
     run:
       config: Debug
+      executable: LTMiOS
     archive:
       config: Release
   LTMWatch:
@@ -100,3 +104,4 @@ schemes:
         LTMWatch: all
     run:
       config: Debug
+      executable: LTMWatch

@@ -1,7 +1,10 @@
 # syntax=docker/dockerfile:1
 
+# Override to pin a digest or use a mirror: --build-arg BASE_IMAGE=...
+ARG BASE_IMAGE=node:22-bookworm-slim
+
 # ---- build: compile the web app and the server bundle -----------------------
-FROM node:22-bookworm-slim AS build
+FROM ${BASE_IMAGE} AS build
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 RUN corepack enable
@@ -13,7 +16,7 @@ RUN pnpm --filter @ltm/web build && pnpm --filter @ltm/server build
 RUN pnpm --filter @ltm/server deploy --prod --legacy /out
 
 # ---- runtime ----------------------------------------------------------------
-FROM node:22-bookworm-slim
+FROM ${BASE_IMAGE}
 ENV NODE_ENV=production \
     LTM_HOST=0.0.0.0 \
     LTM_PORT=8080 \
