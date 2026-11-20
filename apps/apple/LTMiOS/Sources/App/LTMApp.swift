@@ -13,6 +13,7 @@ struct LTMApp: App {
                 .environmentObject(model)
                 .environmentObject(model.coordinator)
                 .environmentObject(model.watchBridge)
+                .environmentObject(model.memoryStore)
                 .onOpenURL { url in model.handle(url: url) }
         }
     }
@@ -56,11 +57,12 @@ struct RootView: View {
                 switch coordinator.state {
                 case .notPaired:
                     NavigationStack { PairView() }
+                        .onAppear { model.resetReader() }
                 case .consentRequired:
                     NavigationStack { ConsentView() }
                 default:
                     if permissionsSeen {
-                        MainView()
+                        ReaderTabView()
                     } else {
                         NavigationStack { PermissionsView { permissionsSeen = true } }
                     }
@@ -69,6 +71,7 @@ struct RootView: View {
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
             coordinator.setForeground(phase == .active)
+            model.setForeground(phase == .active)
             if phase == .active && !handledLaunch {
                 handledLaunch = true
                 // Only when the user enabled "resume automatically"; never by default.

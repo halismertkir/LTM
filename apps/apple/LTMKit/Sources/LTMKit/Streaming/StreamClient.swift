@@ -1,5 +1,4 @@
 import Foundation
-import os
 
 /// One ingest stream over the WebSocket (`packages/protocol/src/ws.ts`).
 ///
@@ -390,12 +389,12 @@ public actor StreamClient {
             }
             do {
                 let first = try await group.next()
-                await self.teardown(conn)
+                self.teardown(conn)
                 group.cancelAll()
                 switch first {
                 case .closedByServer:
-                    if await self.endRequested {
-                        await self.markCloseConfirmed()
+                    if self.endRequested {
+                        self.markCloseConfirmed()
                         return
                     }
                     throw Failure.transient("server closed the stream")
@@ -403,7 +402,7 @@ public actor StreamClient {
                     throw Failure.transient("session stopped")
                 }
             } catch {
-                await self.teardown(conn)
+                self.teardown(conn)
                 group.cancelAll()
                 throw error
             }

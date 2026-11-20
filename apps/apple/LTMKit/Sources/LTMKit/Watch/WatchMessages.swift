@@ -11,6 +11,8 @@ public struct WatchContext: Codable, Sendable, Equatable {
     /// The WATCH's own device token (paired with `kind: "apple_watch"`), not the phone's.
     public var watchToken: String?
     public var watchDeviceId: String?
+    /// What the server granted the watch device (optional: older phones do not send it).
+    public var watchAccess: DeviceAccess?
     /// The phone un-paired the watch: delete the local token.
     public var watchUnpaired: Bool
     public var consentSatisfied: Bool
@@ -27,11 +29,13 @@ public struct WatchContext: Codable, Sendable, Equatable {
         consentSatisfied: Bool,
         ingestPaused: Bool,
         languageHint: String?,
-        updatedAtMs: Int64
+        updatedAtMs: Int64,
+        watchAccess: DeviceAccess? = nil
     ) {
         self.serverOrigin = serverOrigin
         self.watchToken = watchToken
         self.watchDeviceId = watchDeviceId
+        self.watchAccess = watchAccess
         self.watchUnpaired = watchUnpaired
         self.consentSatisfied = consentSatisfied
         self.ingestPaused = ingestPaused
@@ -57,15 +61,17 @@ public struct WatchPairResult: Codable, Sendable, Equatable {
     public var ok: Bool
     public var token: String?
     public var deviceId: String?
+    public var access: DeviceAccess?
     public var errorCode: String?
     public var errorMessage: String?
     /// The watch could not reach the server at all (the phone may pair on its behalf).
     public var transportFailure: Bool
 
-    public init(ok: Bool, token: String? = nil, deviceId: String? = nil, errorCode: String? = nil, errorMessage: String? = nil, transportFailure: Bool = false) {
+    public init(ok: Bool, token: String? = nil, deviceId: String? = nil, access: DeviceAccess? = nil, errorCode: String? = nil, errorMessage: String? = nil, transportFailure: Bool = false) {
         self.ok = ok
         self.token = token
         self.deviceId = deviceId
+        self.access = access
         self.errorCode = errorCode
         self.errorMessage = errorMessage
         self.transportFailure = transportFailure

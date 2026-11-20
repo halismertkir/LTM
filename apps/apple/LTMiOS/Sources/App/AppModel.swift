@@ -20,6 +20,12 @@ final class AppModel: ObservableObject {
     let uploadQueue: UploadQueue
     let coordinator: CaptureCoordinator
     let watchBridge: PhoneWatchBridge
+    /// The reader (Today, Timeline, Ask, Memories) — works when the phone was paired with
+    /// `access: "memory"`; otherwise it explains how to allow reading in the web app.
+    let memoryStore: MemoryStore
+
+    private var cancellables = Set<AnyCancellable>()
+    private var isForeground = false
 
     /// A pairing link opened from the camera app or a QR code (`ltm://pair?...`).
     @Published var pendingPairingURI: PairingURI?
@@ -47,9 +53,56 @@ final class AppModel: ObservableObject {
         self.uploadQueue = queue
         self.coordinator = coordinator
         self.watchBridge = PhoneWatchBridge(coordinator: coordinator, settings: settings, tokens: tokens, uploadQueue: queue)
+        self.memoryStore = MemoryStore(api: { coordinator.api().map { $0 as any MemoryAPI } })
+
+        // The kill switch, wherever it changes, reaches capture (and from there the watch).
+        memoryStore.onCapturePaused = { paused in coordinator.setIngestPaused(paused) }
+        coordinator.$me
+            .compactMap { $0?.ingestPaused }
+            .sink { [weak self] paused in self?.memoryStore.knownIngestPaused(paused) }
+            .store(in: &cancellables)
 
         watchBridge.activate()
         Task { await coordinator.bootstrap() }
+    }
+
+    // MARK: Reader lifecycle
+
+    /// Foreground: check what this device may do and follow live events. Background: stop
+    /// the event stream (it is only useful while the reader is on screen).
+    func setForeground(_ foreground: Bool) {
+        isForeground = foreground
+        if foreground {
+            Task { await refreshReader() }
+        } else {
+            memoryStore.stopLive()
+        }
+    }
+
+    func refreshReader() async {
+        guard coordinator.isPaired else {
+            memoryStore.stopLive()
+            return
+        }
+        await memoryStore.checkAccess()
+        if memoryStore.access == .memory {
+            settings.deviceAccess = .memory
+            startLiveIfPossible()
+        } else if memoryStore.access == .captureOnly {
+            settings.deviceAccess = .capture
+            memoryStore.stopLive()
+        }
+    }
+
+    private func startLiveIfPossible() {
+        guard isForeground, memoryStore.canRead, !memoryStore.isLive,
+              let server = settings.server, let token = tokens.token(for: .phone) else { return }
+        memoryStore.startLive(LiveEventClient(server: server, token: token, source: URLSessionEventByteSource()))
+    }
+
+    /// After un-pairing: drop everything the reader cached.
+    func resetReader() {
+        memoryStore.reset()
     }
 
     func handle(url: URL) {

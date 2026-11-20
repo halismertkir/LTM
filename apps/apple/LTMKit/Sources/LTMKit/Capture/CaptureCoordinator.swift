@@ -1,6 +1,10 @@
+#if canImport(Combine)
 import Combine
+#endif
 import Foundation
-import os
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// The single state machine both UIs observe.
 ///
@@ -155,6 +159,18 @@ public final class CaptureCoordinator: ObservableObject {
 
     public var consentState: ConsentState? { me?.consent }
 
+    /// The account-wide kill switch as last seen (server response, live event or phone sync).
+    public var isIngestPaused: Bool { ingestPaused }
+
+    /// Last known consent state (nil = never fetched).
+    public var isConsentSatisfied: Bool? { consentSatisfied }
+
+    /// The kill switch changed (a `capture_paused` live event or a `/capture/pause` reply).
+    public func setIngestPaused(_ paused: Bool) {
+        guard paused != ingestPaused else { return }
+        updateGates(consentSatisfied: consentSatisfied ?? false, ingestPaused: paused)
+    }
+
     private func updateGates(consentSatisfied satisfied: Bool, ingestPaused paused: Bool) {
         consentSatisfied = satisfied
         ingestPaused = paused
@@ -203,6 +219,7 @@ public final class CaptureCoordinator: ObservableObject {
         serverVersion = try await anonymous.checkCompatibility()
         let response = try await anonymous.pair(request)
         try storePairing(server: server, token: response.token, deviceId: response.device.id)
+        settings.deviceAccess = response.device.access
         await refresh()
     }
 

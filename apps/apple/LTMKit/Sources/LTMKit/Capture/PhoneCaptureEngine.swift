@@ -1,6 +1,9 @@
 #if os(iOS)
 import AVFoundation
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import Speech
 
 /// Routes gated audio to the active transport/transcription combination:

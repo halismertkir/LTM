@@ -2,7 +2,6 @@
 import AVFoundation
 import Foundation
 import Speech
-import os
 
 /// On-device speech recognition with `SFSpeechRecognizer`.
 ///

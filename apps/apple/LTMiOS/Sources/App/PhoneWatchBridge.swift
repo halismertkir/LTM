@@ -1,7 +1,6 @@
 import Combine
 import Foundation
 import LTMKit
-import os
 
 /// Phone side of the watch integration.
 ///
@@ -67,9 +66,14 @@ final class PhoneWatchBridge: ObservableObject {
         }
         link.configure(handlers)
 
-        // `@Published` emits before the property changes, so use the emitted value.
+        // `@Published` emits before the property changes; push on the next main-actor
+        // turn so the coordinator's consent and pause state are already updated (a
+        // `capture_paused` live event changes the state without a new `/me`).
+        coordinator.$state
+            .sink { [weak self] _ in Task { @MainActor in self?.pushContext() } }
+            .store(in: &cancellables)
         coordinator.$me
-            .sink { [weak self] me in self?.pushContext(me: me) }
+            .sink { [weak self] _ in Task { @MainActor in self?.pushContext() } }
             .store(in: &cancellables)
     }
 
@@ -101,7 +105,7 @@ final class PhoneWatchBridge: ObservableObject {
             }
             if let result {
                 if result.ok, let token = result.token {
-                    try storeWatch(token: token, deviceId: result.deviceId)
+                    try storeWatch(token: token, deviceId: result.deviceId, access: result.access)
                     return
                 }
                 if !result.transportFailure {
@@ -121,18 +125,19 @@ final class PhoneWatchBridge: ObservableObject {
             platform: "watchOS",
             appVersion: DeviceInfo.appVersion
         ))
-        try storeWatch(token: response.token, deviceId: response.device.id)
+        try storeWatch(token: response.token, deviceId: response.device.id, access: response.device.access)
     }
 
     /// A pairing result the watch sent via `transferUserInfo` (also covers a lost reply).
     private func accept(_ result: WatchPairResult) {
         guard result.ok, let token = result.token, tokens.token(for: .watch) != token else { return }
-        try? storeWatch(token: token, deviceId: result.deviceId)
+        try? storeWatch(token: token, deviceId: result.deviceId, access: result.access)
     }
 
-    private func storeWatch(token: String, deviceId: String?) throws {
+    private func storeWatch(token: String, deviceId: String?, access: DeviceAccess?) throws {
         try tokens.setToken(token, for: .watch)
         settings.watchDeviceId = deviceId
+        settings.watchDeviceAccess = access
         isWatchPaired = true
         pushContext()
         let queue = uploadQueue
@@ -144,6 +149,7 @@ final class PhoneWatchBridge: ObservableObject {
     func unpairWatch() {
         try? tokens.setToken(nil, for: .watch)
         settings.watchDeviceId = nil
+        settings.watchDeviceAccess = nil
         isWatchPaired = false
         pushContext(unpaired: true)
         let queue = uploadQueue
@@ -152,17 +158,17 @@ final class PhoneWatchBridge: ObservableObject {
 
     // MARK: Context
 
-    func pushContext(me: Me? = nil, unpaired: Bool = false) {
-        let current = me ?? coordinator.me
+    func pushContext(unpaired: Bool = false) {
         let context = WatchContext(
             serverOrigin: settings.server?.originString,
             watchToken: tokens.token(for: .watch),
             watchDeviceId: settings.watchDeviceId,
             watchUnpaired: unpaired,
-            consentSatisfied: current?.consent.satisfied ?? (settings.lastConsentSatisfied ?? false),
-            ingestPaused: current?.ingestPaused ?? settings.lastIngestPaused,
+            consentSatisfied: coordinator.isConsentSatisfied ?? false,
+            ingestPaused: coordinator.isIngestPaused,
             languageHint: settings.languageHint,
-            updatedAtMs: EpochMs.now()
+            updatedAtMs: EpochMs.now(),
+            watchAccess: settings.watchDeviceAccess
         )
         do {
             try link.updateContext(context)

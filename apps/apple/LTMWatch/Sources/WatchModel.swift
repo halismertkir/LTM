@@ -127,6 +127,11 @@ final class WatchModel: ObservableObject {
             try? coordinator.storePairing(server: server, token: token, deviceId: context.watchDeviceId)
         }
         settings.languageHint = context.languageHint
+        if let access = context.watchAccess { settings.deviceAccess = access }
+        // The account-wide pause flipped (from the web app or the phone): tell the wrist.
+        if context.ingestPaused != coordinator.isIngestPaused, coordinator.isPaired {
+            WKInterfaceDevice.current().play(context.ingestPaused ? .stop : .start)
+        }
         coordinator.applyRemoteState(consentSatisfied: context.consentSatisfied, ingestPaused: context.ingestPaused)
         // The watch's own view of the server wins when it can reach it.
         Task { await coordinator.refresh() }
@@ -146,7 +151,7 @@ final class WatchModel: ObservableObject {
         )
         do {
             try await coordinator.pair(server: server, request: request)
-            return WatchPairResult(ok: true, token: tokens.token(for: .watch), deviceId: settings.deviceId)
+            return WatchPairResult(ok: true, token: tokens.token(for: .watch), deviceId: settings.deviceId, access: settings.deviceAccess)
         } catch {
             let ltmError = LTMError.from(error)
             switch ltmError {

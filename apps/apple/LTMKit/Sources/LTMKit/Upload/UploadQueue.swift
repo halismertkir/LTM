@@ -1,5 +1,4 @@
 import Foundation
-import os
 
 /// Why the queue is holding back uploads.
 public enum UploadPauseReason: String, Sendable, Equatable, Codable {

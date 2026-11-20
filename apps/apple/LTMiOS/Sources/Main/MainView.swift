@@ -7,7 +7,9 @@ import SwiftUI
 struct MainView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var coordinator: CaptureCoordinator
+    @EnvironmentObject private var store: MemoryStore
     @State private var showNotice = false
+    @State private var pauseError: String?
 
     var body: some View {
         NavigationStack {
@@ -123,7 +125,27 @@ struct MainView: View {
         case .paused(let reason):
             VStack(spacing: 8) {
                 if reason == .server {
-                    Text(L("main.pausedByServer")).font(.footnote).multilineTextAlignment(.center)
+                    Text(store.canRead ? L("main.pausedByServer.canResume") : L("main.pausedByServer"))
+                        .font(.footnote)
+                        .multilineTextAlignment(.center)
+                    if store.canRead {
+                        Button {
+                            Task {
+                                do {
+                                    try await store.setCapturePaused(false)
+                                    pauseError = nil
+                                } catch {
+                                    pauseError = ErrorText.describe(error)
+                                }
+                            }
+                        } label: {
+                            Label(L("main.resumeAccount"), systemImage: "play.circle")
+                        }
+                        .buttonStyle(.bordered)
+                        if let pauseError {
+                            Text(pauseError).font(.caption).foregroundStyle(.red)
+                        }
+                    }
                 }
                 HStack(spacing: 12) {
                     Button {

@@ -1,7 +1,6 @@
 #if os(iOS)
 import AVFoundation
 import Foundation
-import os
 
 /// Maps `AVAudioTime` host time (mach ticks) to device-clock epoch milliseconds.
 ///

@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Hand-built `multipart/form-data` body for `POST /ingest/chunks`:
 /// a `meta` text field carrying ChunkMeta JSON, followed by the `audio` file part.
@@ -56,8 +59,9 @@ public struct MultipartFormData: Sendable, Equatable {
     }
 
     /// Quotes and line breaks would break the header; chunk file names are ours anyway.
+    /// (`isNewline`, because "\r\n" is a single `Character` that `!= "\n"` would keep.)
     static func sanitize(_ fileName: String) -> String {
-        String(fileName.filter { $0 != "\"" && $0 != "\r" && $0 != "\n" })
+        String(fileName.filter { $0 != "\"" && !$0.isNewline })
     }
 }
 

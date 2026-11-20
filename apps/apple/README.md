@@ -13,9 +13,23 @@ apps/apple/
   LTMWatch/          SwiftUI watchOS app (single-target watch app, companion of LTMiOS)
 ```
 
-> **Status: written without a Mac.** None of this code has been compiled or run yet. It
-> was checked statically only (see "What is untested" below). Expect a first round of
-> compile fixes on Xcode.
+> **Verification status**
+> - **Compiler-verified on Linux** (Swift 6.4 toolchain, Swift 5 language mode): the
+>   platform-neutral part of `LTMKit` — protocol models, frame encoder, API client and
+>   reader API, multipart builder, pairing URI, stream client, SSE parser and live-event
+>   client, energy gate / block assembler / chunk cutter, upload store, decisions and queue,
+>   capture policy/state/coordinator, consent catalog, reader view models. `swift build`
+>   is warning-free (also with `-strict-concurrency=complete`) and `swift test` runs
+>   102 tests green.
+> - **Verified by CI once the workflow is green** (`.github/workflows/apple.yml`, macOS):
+>   `swift test` on macOS and unsigned simulator builds of the `LTMiOS` and `LTMWatch`
+>   schemes — which is the only compiler that sees the SwiftUI screens and the
+>   Apple-only layers (AVFoundation capture, Speech, WatchConnectivity, Keychain,
+>   background `URLSession`, App Intents).
+> - **Needs a physical device**: audio-session behaviour with the screen locked and
+>   after interruptions, the watch's background recording and battery cost,
+>   WatchConnectivity transfers between real devices, on-device speech recognition, and
+>   background upload relaunches.
 
 ## Prerequisites
 
@@ -44,15 +58,17 @@ open LTM.xcodeproj
    id and `WKCompanionAppBundleIdentifier` follow automatically.
 3. Run the **`LTMiOS`** scheme on the iPhone. The watch app is embedded in the iPhone app
    and installed with it; to debug it, run the **`LTMWatch`** scheme on the watch.
-4. **Unit tests** (pure logic, run on the Mac without a simulator):
+4. **Unit tests** (pure logic; macOS or Linux, no simulator):
 
    ```sh
    cd apps/apple/LTMKit && swift test
    ```
 
-   or open `LTMKit/Package.swift` in Xcode and press ⌘U. The consent test reads
-   `packages/protocol/consent/consent.v1.json` from the repository, so run it from a
-   checkout.
+   or open `LTMKit/Package.swift` in Xcode and press ⌘U. On Linux, Apple-only frameworks
+   are compiled out (`canImport` guards; `os.Logger` falls back to stderr, `Combine` to an
+   inert `ObservableObject`/`@Published` stand-in used only by the tests). The consent test
+   reads `packages/protocol/consent/consent.v1.json` from the repository, so run it from
+   a checkout.
 
 ### Capabilities
 
@@ -69,6 +85,38 @@ keys, not entitlements, and the Keychain is used without sharing groups.
 
 Entitlement files exist but are empty. If you later add a widget, Live Activity or an
 App Group, add it there.
+
+## The phone as a reader
+
+Once paired and consented, the iPhone app is a full reader of your memory:
+
+- **Today** — the day's digest (headline, summary, highlights, decisions, people, open
+  action items you can tick in place), the day's conversations, and a compact capture
+  control with the live caption, so capture stays one tap away.
+- **Timeline** — days (newest first) → a day's digest; or all conversations with search
+  and infinite paging. Conversations still in progress are shown as *Live · notes so
+  far* (`interim`).
+- **Conversation** — title, status, summary, notes (Markdown rendered block by block:
+  headings, lists, quotes, code; inline styles via `AttributedString(markdown:)`, plain
+  text if that fails), decisions, action items, the merged transcript with time,
+  speaker, source and "heard by N devices" badges, and the memories extracted from it.
+- **Ask** — a thread of questions; each is one `/ask` call scoped to today, 7 days or
+  everything. Answers cite [1], [2], … and each citation opens its conversation or memory.
+- **Memories** — list, kind filter, search, add.
+- **Capture** — the capture screen and settings from before. With memory access the
+  account-wide pause is a switch (`POST /capture/pause`) and reacts to `capture_paused`
+  live events; the watch follows through the phone.
+
+Live updates come from `GET /events` (server-sent events, parsed by a small pure parser;
+unknown event types are ignored so a newer server never breaks an older app), followed
+while the app is in the foreground and reconnected with back-off.
+
+**Device access.** Reading needs the phone to be paired with `access: "memory"` (the web
+app's pairing dialog pre-selects it for an iPhone). The phone then calls exactly the
+memory routes the server allows for device tokens — no account password is ever stored
+on the phone. A phone paired with `access: "capture"` keeps capturing; the reader tabs
+explain how to allow reading (web app → Devices) and offer a retry. A `403 forbidden`
+anywhere switches the reader to that explanation instead of showing errors.
 
 ## Pairing
 
@@ -190,24 +238,18 @@ next launch or go through the phone.
   and an accent colour. Add your own artwork; Xcode warns until you do, and App Store
   submission requires it.
 
-## What is untested
+## What is verified where
 
-Everything. Nothing here has been compiled, run in a simulator, or run on a device.
-Verified statically on Linux: JSON / plist / YAML files parse, every path in `project.yml`
-exists, Swift delimiters balance, every localisation key used in code exists in both
-languages with matching format specifiers, Codable field names were cross-checked against
-the zod schemas, and the energy-gate expectations in the tests were reproduced with a
-small Python model. Areas that most need a first run on a Mac:
-
-1. Compile errors in general (actor isolation, `Sendable`, SDK signature details).
-2. XcodeGen embedding of the single-target watch app and its signing.
-3. `AudioCapture` on a device: session options, background recording, interruptions,
-   route changes, the converter's output and the host-time mapping.
-4. Background `URLSession` uploads and relaunch handling.
-5. `AVAudioFile` AAC writing at 16 kHz and the watch's `AVAudioRecorder` rotation.
-6. WatchConnectivity flows (pairing via the phone, file hand-off, context sync).
-7. `SFSpeechRecognizer` on-device results and their timestamps.
-8. The `LTMKit` unit tests themselves (`swift test`).
+- **Linux compiler + tests**: everything listed under "Verification status" above;
+  the wire formats are pinned by literal-JSON and byte-level tests, and every Swift DTO
+  was cross-checked field by field against the zod schemas by script.
+- **macOS CI** (once green): the same tests on macOS, plus the first compile of the
+  SwiftUI screens and Apple-only layers for iOS and watchOS simulators.
+- **Static checks** (scripts, any OS): plists/JSON/YAML parse, every `project.yml` path
+  exists, every localisation key exists in EN and TR with matching format specifiers.
+- **Only on devices**: background recording and interruptions, watch recording and
+  battery, WatchConnectivity, on-device Speech, background upload relaunch, the camera
+  QR scanner.
 
 ## Deliberately not included (yet)
 

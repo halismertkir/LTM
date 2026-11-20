@@ -42,6 +42,8 @@ public final class SettingsStore: @unchecked Sendable {
         static let lastConsentSatisfied = "ltm.lastConsentSatisfied"
         static let lastIngestPaused = "ltm.lastIngestPaused"
         static let welcomeSeen = "ltm.welcomeSeen"
+        static let deviceAccess = "ltm.deviceAccess"
+        static let watchDeviceAccess = "ltm.watchDeviceAccess"
     }
 
     public init(defaults: UserDefaults = .standard) {
@@ -106,6 +108,19 @@ public final class SettingsStore: @unchecked Sendable {
         set { defaults.set(newValue, forKey: Key.lastIngestPaused) }
     }
 
+    /// What the server granted this device at pairing ("capture" / "memory"); refreshed
+    /// from `/devices/self`. nil for servers that predate device access.
+    public var deviceAccess: DeviceAccess? {
+        get { defaults.string(forKey: Key.deviceAccess).map(DeviceAccess.init(rawValue:)) }
+        set { defaults.set(newValue?.rawValue, forKey: Key.deviceAccess) }
+    }
+
+    /// On the phone: what the server granted the paired watch.
+    public var watchDeviceAccess: DeviceAccess? {
+        get { defaults.string(forKey: Key.watchDeviceAccess).map(DeviceAccess.init(rawValue:)) }
+        set { defaults.set(newValue?.rawValue, forKey: Key.watchDeviceAccess) }
+    }
+
     public var welcomeSeen: Bool {
         get { defaults.bool(forKey: Key.welcomeSeen) }
         set { defaults.set(newValue, forKey: Key.welcomeSeen) }
@@ -119,5 +134,7 @@ public final class SettingsStore: @unchecked Sendable {
         lastConsentSatisfied = nil
         lastIngestPaused = false
         captureWasActive = false
+        deviceAccess = nil
+        watchDeviceAccess = nil
     }
 }

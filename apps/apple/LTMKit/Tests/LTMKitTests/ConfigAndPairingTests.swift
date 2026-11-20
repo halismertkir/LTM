@@ -136,6 +136,16 @@ final class WatchMessagesTests: XCTestCase {
         XCTAssertNil(WatchCoding.decode(WatchContext.self, from: "not data"))
     }
 
+    func testContextFromAnOlderPhoneStillDecodes() throws {
+        let old = #"{"serverOrigin":"https://ltm.example.com","watchToken":"t","watchDeviceId":"d","watchUnpaired":false,"consentSatisfied":true,"ingestPaused":true,"updatedAtMs":1}"#
+        let context = try XCTUnwrap(WatchCoding.decode(WatchContext.self, from: Data(old.utf8)))
+        XCTAssertNil(context.watchAccess)
+        XCTAssertTrue(context.ingestPaused)
+        let new = WatchContext(serverOrigin: nil, watchToken: nil, watchDeviceId: nil, watchUnpaired: false, consentSatisfied: true,
+                               ingestPaused: false, languageHint: nil, updatedAtMs: 2, watchAccess: .memory)
+        XCTAssertEqual(WatchCoding.decode(WatchContext.self, from: WatchCoding.encode(new))?.watchAccess, .memory)
+    }
+
     func testUploadJobSurvivesTransfer() throws {
         let meta = ChunkMeta(streamId: "s", seq: 2, source: .ambient, startMs: 1, durationMs: 30_000, clientTimeMs: 2)
         let job = UploadJob(role: .watch, kind: .chunk(meta: meta, mimeType: "audio/mp4", fileExtension: "m4a"), createdAtMs: 5)

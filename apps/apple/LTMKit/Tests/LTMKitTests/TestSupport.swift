@@ -156,7 +156,7 @@ final class FakeConnector: WebSocketConnector, @unchecked Sendable {
 
 // MARK: - Fake upload transport
 
-final class FakeTransport: CompletionRelay, UploadTransport {
+final class FakeTransport: CompletionRelay, UploadTransport, @unchecked Sendable {
     private let requests = LockedBox<[UploadRequest]>([])
     private let bodies = LockedBox<[String: Data]>([:])
 

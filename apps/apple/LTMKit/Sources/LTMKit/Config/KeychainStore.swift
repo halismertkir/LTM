@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(Security)
 import Security
+#endif
 
 /// Which paired device a credential or upload belongs to. The phone holds its own token
 /// and, after pairing the watch, the watch's token too (so it can upload chunks the watch
@@ -15,6 +17,7 @@ public protocol TokenStore: Sendable {
     func setToken(_ token: String?, for role: DeviceRole) throws
 }
 
+#if canImport(Security)
 public struct KeychainError: Error, Equatable, Sendable {
     public let status: OSStatus
 }
@@ -71,6 +74,8 @@ public final class KeychainStore: TokenStore, @unchecked Sendable {
         guard addStatus == errSecSuccess else { throw KeychainError(status: addStatus) }
     }
 }
+
+#endif
 
 /// In-memory token store for tests and SwiftUI previews.
 public final class MemoryTokenStore: TokenStore, @unchecked Sendable {

@@ -128,6 +128,16 @@ struct WatchInfoView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
+                if let access = coordinator.settings.deviceAccess {
+                    Text(access == .memory ? L("watch.info.accessMemory") : L("watch.info.accessCapture"))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                if coordinator.isIngestPaused {
+                    Label(L("watch.state.pausedServer"), systemImage: "pause.circle")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                }
                 Text(model.phoneReachable ? L("watch.info.phoneReachable") : L("watch.info.phoneUnreachable"))
                     .font(.footnote)
                     .foregroundStyle(.secondary)

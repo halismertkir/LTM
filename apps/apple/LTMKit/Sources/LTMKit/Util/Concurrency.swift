@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// A value guarded by a lock, for the few places where state is touched from callback
 /// threads we do not control (URLSession delegates, WatchConnectivity, audio taps).

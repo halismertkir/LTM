@@ -39,6 +39,8 @@ public struct Device: Codable, Sendable, Equatable {
     public var name: String
     /// Raw `DeviceKind` value; kept as String so an unknown kind does not break decoding.
     public var kind: String
+    /// `capture` or `memory`. Optional so that servers predating device access still decode.
+    public var access: DeviceAccess?
     public var platform: String?
     public var appVersion: String?
     public var priority: Int?

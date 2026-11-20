@@ -59,6 +59,24 @@ public struct ServerConfig: Sendable, Equatable, Hashable, Codable {
         URL(string: originString + LTMProtocol.apiPrefix + path) ?? origin
     }
 
+    /// `<origin>/api/v1<path>?<query>`. Values are percent-encoded strictly: `+`, `&`, `=`
+    /// and friends are escaped, because form-style servers decode a literal `+` as a space.
+    public func apiURL(_ path: String, query: [(String, String)]) -> URL {
+        let items = query.map { "\(Self.encodeQueryComponent($0.0))=\(Self.encodeQueryComponent($0.1))" }
+        guard !items.isEmpty else { return apiURL(path) }
+        return URL(string: originString + LTMProtocol.apiPrefix + path + "?" + items.joined(separator: "&")) ?? apiURL(path)
+    }
+
+    static let queryValueAllowed: CharacterSet = {
+        var set = CharacterSet.alphanumerics.intersection(CharacterSet(charactersIn: Unicode.Scalar(0)..<Unicode.Scalar(128)))
+        set.insert(charactersIn: "-._~")
+        return set
+    }()
+
+    static func encodeQueryComponent(_ value: String) -> String {
+        value.addingPercentEncoding(withAllowedCharacters: queryValueAllowed) ?? value
+    }
+
     /// `ws(s)://<host>/api/v1/ingest/ws`.
     public var webSocketURL: URL {
         let wsScheme = scheme == "https" ? "wss" : "ws"

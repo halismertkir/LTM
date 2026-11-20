@@ -3,6 +3,8 @@
 "watch.dismiss" = "OK";
 "watch.help.consent" = "Accept the consent documents in LTM on your iPhone first.";
 "watch.help.pair" = "Pair the watch from the iPhone: LTM → Settings → Apple Watch.";
+"watch.info.accessCapture" = "Paired for capture";
+"watch.info.accessMemory" = "Paired for capture and reading";
 "watch.info.lastSync" = "Synced at %@";
 "watch.info.notPaired" = "Not paired yet";
 "watch.info.paired" = "Paired with your LTM server";

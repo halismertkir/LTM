@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Thin async/await client for the REST routes a device token may call.
 public struct APIClient: Sendable {
@@ -107,6 +110,24 @@ public struct APIClient: Sendable {
         }
         request.timeoutInterval = 30
         return request
+    }
+
+    /// Authenticated GET with query items.
+    func get<T: Decodable>(_ path: String, query: [(String, String)]) async throws -> T {
+        guard token != nil else { throw LTMError.notPaired }
+        var request = makeRequest(method: "GET", path: path, contentType: nil)
+        request.url = server.apiURL(path, query: query)
+        let data = try await perform(request, body: nil)
+        return try Self.decodeBody(T.self, from: data)
+    }
+
+    /// Authenticated request with a JSON body (POST / PATCH).
+    func sendJSON<T: Decodable>(method: String, path: String, body: Data, timeout: TimeInterval = 30) async throws -> T {
+        guard token != nil else { throw LTMError.notPaired }
+        var request = makeRequest(method: method, path: path, contentType: "application/json")
+        request.timeoutInterval = timeout
+        let data = try await perform(request, body: body)
+        return try Self.decodeBody(T.self, from: data)
     }
 
     private func send<T: Decodable>(method: String, path: String, body: Data?, authenticated: Bool = true) async throws -> T {

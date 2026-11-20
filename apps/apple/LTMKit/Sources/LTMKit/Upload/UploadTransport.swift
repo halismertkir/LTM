@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Outcome of one HTTP attempt as seen by the queue.
 public struct UploadCompletion: Sendable, Equatable {
@@ -70,6 +73,7 @@ open class CompletionRelay: NSObject, @unchecked Sendable {
     }
 }
 
+#if canImport(Darwin)
 /// Background `URLSession` transport (iPhone).
 ///
 /// Background sessions only support upload tasks *from a file* and report results only
@@ -78,7 +82,7 @@ open class CompletionRelay: NSObject, @unchecked Sendable {
 /// `application(_:handleEventsForBackgroundURLSession:completionHandler:)` whose handler
 /// must be invoked after `urlSessionDidFinishEvents`. Response bodies are collected per
 /// task in `didReceive data` because there is no completion handler to receive them.
-public final class BackgroundUploadTransport: CompletionRelay, URLSessionDataDelegate, UploadTransport {
+public final class BackgroundUploadTransport: CompletionRelay, URLSessionDataDelegate, UploadTransport, @unchecked Sendable {
     public let identifier: String
     private var backgroundSession: URLSession!
     private let foregroundSession: URLSession
@@ -176,10 +180,12 @@ public final class BackgroundUploadTransport: CompletionRelay, URLSessionDataDel
     #endif
 }
 
+#endif
+
 /// Foreground transport (watch, tests): `URLSession.upload(for:fromFile:)` with a short
 /// timeout so that a watch without its own route to the server notices quickly and
 /// hands the chunk to the phone instead.
-public final class ForegroundUploadTransport: CompletionRelay, UploadTransport {
+public final class ForegroundUploadTransport: CompletionRelay, UploadTransport, @unchecked Sendable {
     private let session: URLSession
     private let inFlight = LockedBox<Set<String>>([])
 
@@ -187,7 +193,9 @@ public final class ForegroundUploadTransport: CompletionRelay, UploadTransport {
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = timeout
         configuration.timeoutIntervalForResource = timeout * 4
+        #if canImport(Darwin)
         configuration.waitsForConnectivity = false
+        #endif
         self.session = URLSession(configuration: configuration)
         super.init()
     }

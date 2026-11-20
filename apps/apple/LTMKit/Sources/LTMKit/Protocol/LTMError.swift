@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Every failure the LTM clients surface, with the server's typed error codes preserved.
 public enum LTMError: Error, Sendable, Equatable {

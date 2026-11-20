@@ -3,6 +3,8 @@
 "watch.dismiss" = "Tamam";
 "watch.help.consent" = "Önce iPhone'daki LTM'de onay belgelerini kabul edin.";
 "watch.help.pair" = "Saati iPhone'dan eşleştirin: LTM → Ayarlar → Apple Watch.";
+"watch.info.accessCapture" = "Kayıt için eşleştirildi";
+"watch.info.accessMemory" = "Kayıt ve okuma için eşleştirildi";
 "watch.info.lastSync" = "Eşitleme: %@";
 "watch.info.notPaired" = "Henüz eşleştirilmedi";
 "watch.info.paired" = "LTM sunucunuzla eşleştirildi";

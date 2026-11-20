@@ -31,6 +31,28 @@ public enum LTMRoute {
     public static let ingestChunks = "/ingest/chunks"
     public static let ingestTranscripts = "/ingest/transcripts"
 
+    public static let conversations = "/conversations"
+    public static let memories = "/memories"
+    public static let search = "/search"
+    public static let ask = "/ask"
+    public static let streams = "/streams"
+    public static let events = "/events"
+    public static let days = "/days"
+    public static let capturePause = "/capture/pause"
+
+    public static func conversation(_ id: String) -> String { "/conversations/\(pathSegment(id))" }
+
+    public static func actionItem(conversationId: String, itemId: String) -> String {
+        "/conversations/\(pathSegment(conversationId))/action-items/\(pathSegment(itemId))"
+    }
+
+    public static func day(_ date: String) -> String { "/days/\(pathSegment(date))" }
+
+    /// Ids come from the server, but never let one smuggle a `/` or `?` into a path.
+    static func pathSegment(_ value: String) -> String {
+        ServerConfig.encodeQueryComponent(value)
+    }
+
     public static func ingestStreamEnd(_ streamId: String) -> String {
         "/ingest/streams/\(streamId)/end"
     }

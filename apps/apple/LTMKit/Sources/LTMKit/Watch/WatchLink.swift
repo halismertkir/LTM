@@ -1,7 +1,6 @@
 #if canImport(WatchConnectivity) && (os(iOS) || os(watchOS))
 import Foundation
 import WatchConnectivity
-import os
 
 /// WatchConnectivity bridge shared by both apps.
 ///

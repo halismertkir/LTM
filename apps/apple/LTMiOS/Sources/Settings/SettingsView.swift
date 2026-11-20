@@ -27,6 +27,18 @@ struct SettingsView: View {
         LanguageOption(code: "es", key: "settings.language.es"),
     ]
 
+    private var accessText: String {
+        switch model.memoryStore.access {
+        case .memory: return L("settings.access.memory")
+        case .captureOnly: return L("settings.access.capture")
+        default:
+            let stored = coordinator.settings.deviceAccess
+            if stored == .memory { return L("settings.access.memory") }
+            if stored == .capture { return L("settings.access.capture") }
+            return "—"
+        }
+    }
+
     var body: some View {
         Form {
             Section(L("settings.server")) {
@@ -37,6 +49,7 @@ struct SettingsView: View {
                 if let me = coordinator.me {
                     LabeledContent(L("settings.server.account"), value: me.user.displayName)
                 }
+                LabeledContent(L("settings.access"), value: accessText)
                 if let server = coordinator.server {
                     Link(destination: server.origin) {
                         Label(L("settings.openDashboard"), systemImage: "safari")
@@ -92,6 +105,7 @@ struct SettingsView: View {
             }
         }
         .navigationTitle(L("settings.title"))
+        .task { await model.refreshReader() }
         .onAppear {
             guard !loaded else { return }
             loaded = true
