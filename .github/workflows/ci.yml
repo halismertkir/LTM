@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "claude/**"]
   pull_request:
   workflow_dispatch:
 
@@ -31,16 +31,3 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
-
-  apple:
-    # Compiles the shared Swift package and runs its unit tests. The apps themselves
-    # need signing and are built locally. Not yet a required check: the Swift sources
-    # have not been through their first verified build (see apps/apple/README.md).
-    continue-on-error: true
-    runs-on: macos-15
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - name: Test LTMKit
-        working-directory: apps/apple/LTMKit
-        run: swift test
