@@ -36,9 +36,10 @@ export interface RunDeps {
 }
 
 const FATAL_HELP: Partial<Record<StreamErrorCode, string>> = {
-  consent_required: "The server requires consent before it accepts audio. Run: ltm-agent consent",
+  consent_required:
+    "The server requires consent before it accepts audio (consent_required). Run: ltm-agent consent",
   ingest_paused:
-    "Capture is paused for your account. Resume it in the LTM dashboard, then start the agent again.",
+    "Capture is paused for your account (ingest_paused). Resume it in the LTM dashboard, then start the agent again.",
   unauthorized:
     "The server rejected this device's token (removed in the dashboard?). Pair again: ltm-agent pair --server <url> --code <code>",
   forbidden: "This device is not allowed to capture. Check its access in the dashboard.",
