@@ -1,7 +1,7 @@
 import { PROTOCOL_VERSION, WS_CLOSE, zClientHello } from "@ltm/protocol";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { backoffDelay, DEFAULT_BACKOFF } from "../src/stream/backoff.js";
-import { StreamClient, type StreamClientOptions, type StreamEvent } from "../src/stream/client.js";
+import { backoffDelay, DEFAULT_BACKOFF } from "../src/backoff.js";
+import { StreamClient, type StreamClientOptions, type StreamEvent } from "../src/client.js";
 import { FakeSocket } from "./fakes/fakeSocket.js";
 
 const STREAM_ID = "0b6f7a5e-4a7c-4f1e-9a33-2a3c4d5e6f70";

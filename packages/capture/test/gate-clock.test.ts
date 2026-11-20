@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { CaptureClock } from "../src/audio/clock.js";
-import { EnergyGate, type StampedBlock } from "../src/audio/gate.js";
-import { floatToS16 } from "../src/audio/pcm.js";
-import { SpeechWindower } from "../src/audio/windower.js";
+import { CaptureClock } from "../src/clock.js";
+import { EnergyGate, type StampedBlock } from "../src/gate.js";
+import { floatToS16 } from "../src/pcm.js";
+import { SpeechWindower } from "../src/windower.js";
 import { mulberry32, tone } from "./fakes/signals.js";
 
 const BLOCK = 3200;

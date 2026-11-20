@@ -31,6 +31,16 @@ export type WebSocketFactory = (url: string) => WebSocketLike;
 
 const WS_OPEN = 1;
 
+/**
+ * The runtime's own WebSocket. Every target runtime has one as a global (browsers, workers,
+ * Node 22+); its handler typings differ slightly from WebSocketLike, hence the cast.
+ */
+export const globalWebSocketFactory: WebSocketFactory = (url) => {
+  const Ctor = (globalThis as { WebSocket?: new (url: string) => unknown }).WebSocket;
+  if (!Ctor) throw new Error("no global WebSocket in this runtime; pass createSocket");
+  return new Ctor(url) as WebSocketLike;
+};
+
 export type StreamPhase =
   | "idle"
   | "connecting"
@@ -80,7 +90,8 @@ export interface StreamClientOptions {
   audio?: AudioFormat;
   language?: string;
   context?: StreamContext;
-  createSocket: WebSocketFactory;
+  /** Defaults to the global `WebSocket` (browsers, workers, Node 22+). */
+  createSocket?: WebSocketFactory;
   onEvent?: (event: StreamEvent) => void;
   now?: () => number;
   random?: () => number;
@@ -134,9 +145,11 @@ const MAX_SEGMENTS_PER_MESSAGE = 200;
  */
 export class StreamClient {
   private readonly o: Required<
-    Omit<StreamClientOptions, "audio" | "language" | "context" | "onEvent">
-  > &
-    Pick<StreamClientOptions, "audio" | "language" | "context" | "onEvent">;
+    Omit<StreamClientOptions, "audio" | "language" | "context" | "onEvent" | "createSocket">
+  > & { createSocket: WebSocketFactory } & Pick<
+      StreamClientOptions,
+      "audio" | "language" | "context" | "onEvent"
+    >;
 
   private ws: WebSocketLike | null = null;
   private phaseValue: StreamPhase = "idle";
@@ -173,6 +186,7 @@ export class StreamClient {
       maxSocketBufferedBytes: 512 * 1024,
       backoff: DEFAULT_BACKOFF,
       ...options,
+      createSocket: options.createSocket ?? globalWebSocketFactory,
     };
     if (this.o.mode === "audio" && !this.o.audio) throw new Error("audio format required");
   }
@@ -392,15 +406,13 @@ export class StreamClient {
         return;
       }
       case "error": {
-        const permanent = PERMANENT_ERRORS.has(msg.code);
-        this.emit({
-          type: "error",
-          code: msg.code,
-          message: msg.message,
-          fatal: msg.fatal && permanent,
-        });
-        if (msg.fatal && permanent) this.fail(msg.code, msg.message);
-        // fatal but transient: the server closes the socket and we reconnect with back-off.
+        if (msg.fatal && PERMANENT_ERRORS.has(msg.code)) {
+          this.fail(msg.code, msg.message); // emits the (single) fatal error event
+          return;
+        }
+        // Non-fatal, or fatal but transient: report it; for the latter the server closes the
+        // socket and we reconnect with back-off.
+        this.emit({ type: "error", code: msg.code, message: msg.message, fatal: false });
         return;
       }
       case "closed":

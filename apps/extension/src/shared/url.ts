@@ -1,5 +1,3 @@
-import { API_PREFIX, WS_INGEST_PATH } from "@ltm/protocol";
-
 /**
  * Normalises what the user typed as the server address into a base URL without a trailing
  * slash. A bare host gets `https://`. The base may carry a path (server behind a reverse
@@ -34,15 +32,8 @@ export function isInsecureRemote(serverUrl: string): boolean {
   return url.protocol === "http:" && !isLoopbackHost(url.hostname);
 }
 
-export function apiUrl(serverUrl: string, route: string): string {
-  return `${serverUrl}${API_PREFIX}${route}`;
-}
-
-export function ingestWsUrl(serverUrl: string): string {
-  const url = new URL(apiUrl(serverUrl, WS_INGEST_PATH));
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  return url.toString();
-}
+// The ingest URL logic is shared with every capture client.
+export { apiUrl, ingestWsUrl } from "@ltm/capture";
 
 /** Match pattern for `chrome.permissions.request` — the origin of the server, any path. */
 export function originPattern(serverUrl: string): string {

@@ -1,13 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { CaptureDsp } from "../src/audio/dsp.js";
-import {
-  downmixToMono,
-  floatToS16,
-  leBytesToS16,
-  rmsDbfs,
-  s16ToLeBytes,
-} from "../src/audio/pcm.js";
-import { StreamingResampler } from "../src/audio/resampler.js";
+import { CaptureDsp } from "../src/dsp.js";
+import { downmixToMono, floatToS16, leBytesToS16, rmsDbfs, s16ToLeBytes } from "../src/pcm.js";
+import { StreamingResampler } from "../src/resampler.js";
 import { amplitudeAt, mulberry32, rms, tone, zeroCrossingFrequency } from "./fakes/signals.js";
 
 function resampleAll(

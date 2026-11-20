@@ -77,19 +77,23 @@ extension pages' CSP is `script-src 'self'; object-src 'none'; base-uri 'none'; 
 popup / options ──runtime messages──▶ service worker (state machine, badge, orchestration)
 content script  ──────────────────────▶      │  chrome.storage.session: AppState
                                              ▼
-                          offscreen document (USER_MEDIA) — all audio + sockets
-                          MediaStream ─▶ AudioWorklet (downmix → windowed-sinc 16 kHz → 200 ms s16 blocks)
-                                      ─▶ CaptureClock (context frame → device epoch ms)
-                                      ─▶ EnergyGate (silence dropped, pre-roll, hangover, DISCONTINUITY)
-                                      ─▶ StreamClient (one WebSocket per source: hello → ready → frames …)
+                          offscreen document (USER_MEDIA) — opens the tab / mic stream
+                          └─ @ltm/capture/browser startBrowserCapture():
+                             MediaStream ─▶ AudioWorklet (downmix → windowed-sinc 16 kHz → 200 ms s16 blocks)
+                                         ─▶ CaptureClock (context frame → device epoch ms)
+                                         ─▶ CaptureSession: EnergyGate (silence dropped, DISCONTINUITY)
+                                         ─▶ StreamClient (one WebSocket per source: hello → ready → frames …)
 ```
 
-| Path                                         | What                                                                                                                                                                                                                  |
-| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/background/`                            | Service worker. `machine.ts` is the pure reducer and view/badge logic. `controller.ts` handles capture start/stop, account refresh, tabs and commands. `offscreenHost.ts` manages the offscreen document's lifecycle. |
-| `src/offscreen/`                             | Audio owner. `session.ts` connects one source end to end. `pipeline.ts` holds the AudioContext and worklet node and plays tab audio back through the speakers. `transcriber.ts` defines the on-device STT interface.  |
-| `src/audio/`                                 | Pure DSP shared with the worklet: resampler, PCM, gate, clock, windower. `worklet.ts` is the AudioWorklet module.                                                                                                     |
-| `src/stream/`                                | Ingest WebSocket client (handshake, back-off with jitter, resume, bounded buffer, fatal errors) and back-off.                                                                                                         |
+The audio pipeline and the stream client live in [`packages/capture`](../../packages/capture)
+(`@ltm/capture`), shared with the web app and the capture agent. The extension adds the
+Chrome-specific parts around it.
+
+| Path | What |
+| --- | --- |
+| `src/background/` | Service worker. `machine.ts` is the pure reducer and view/badge logic. `controller.ts` handles capture start/stop, account refresh, tabs and commands. `offscreenHost.ts` manages the offscreen document's lifecycle. |
+| `src/offscreen/` | Owns all audio. `media.ts` opens the tab stream (from `tabCapture`) or the microphone. `session.ts` is a thin adapter: it hands the stream to `startBrowserCapture` (with tab playthrough) and translates capture events into worker messages. `transcriber.ts` is the on-device STT hook (none ships). |
+| `@ltm/capture/worklet` | The AudioWorklet module, emitted by `vite.config.ts` as its own file `capture-worklet.js`. |
 | `src/popup/`, `src/options/`, `src/content/` | UI and the meeting-detection banner (plain TS with a small `h()` helper).                                                                                                                                             |
 | `src/shared/`                                | Config/storage, REST client, URL helpers, message types, i18n dictionaries (EN/TR).                                                                                                                                   |
 | `src/manifest.ts`                            | Generates `manifest.json` at build time.                                                                                                                                                                              |
@@ -144,8 +148,9 @@ content script  ─────────────────────�
 ## Tests
 
 ```sh
-pnpm --filter @ltm/extension typecheck   # four tsconfigs: pages (DOM), worker (WebWorker), worklet, tests
-pnpm --filter @ltm/extension test        # vitest: unit tests + Node end-to-end against a local ws server
+pnpm --filter @ltm/extension typecheck   # three tsconfigs: pages (DOM), worker (WebWorker), tests
+pnpm --filter @ltm/extension test        # vitest: state machine, adapter, manifest, i18n, API client
+pnpm --filter @ltm/capture test          # the shared pipeline: DSP, gate, clock, stream client, Node e2e
 pnpm --filter @ltm/extension build
 node apps/extension/scripts/browser-check.mjs [screenshotDir]   # needs a built dist/ and a global Playwright
 ```

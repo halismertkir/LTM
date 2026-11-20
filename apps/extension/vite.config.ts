@@ -1,10 +1,15 @@
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build, defineConfig, type Plugin } from "vite";
 import { buildManifest } from "./src/manifest.ts";
 
 const root = dirname(fileURLToPath(import.meta.url));
+// The worklet module comes from the shared capture package ("@ltm/capture/worklet").
+const workletEntry = createRequire(import.meta.url).resolve("@ltm/capture/worklet");
+// Must match what the offscreen document loads (WORKLET_FILE in @ltm/capture).
+const WORKLET_FILE = "capture-worklet.js";
 const outDir = resolve(root, "dist");
 const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as { version: string };
 
@@ -17,7 +22,7 @@ const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as {
  */
 const satellites = [
   { entry: "src/content/index.ts", file: "content.js", format: "iife" as const },
-  { entry: "src/audio/worklet.ts", file: "capture-worklet.js", format: "es" as const },
+  { entry: workletEntry, file: WORKLET_FILE, format: "es" as const },
 ];
 
 async function buildSatellites(watch: boolean, mode: string): Promise<void> {

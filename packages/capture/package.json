@@ -1,0 +1,27 @@
+{
+  "name": "@ltm/capture",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Audio capture pipeline shared by the JavaScript capture clients: resampling, wall-clock stamping, energy gate and the resumable ingest stream client.",
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "exports": {
+    ".": "./src/index.ts",
+    "./browser": "./src/browser.ts",
+    "./worklet": "./src/worklet.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.worklet.json && tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ltm/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.1",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1",
+    "ws": "^8.18.3"
+  }
+}

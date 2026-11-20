@@ -1,5 +1,5 @@
 import { type AudioFrame, decodeAudioFrame } from "@ltm/protocol";
-import type { WebSocketLike } from "../../src/stream/client.js";
+import type { WebSocketLike } from "../../src/client.js";
 
 /** Scriptable in-memory WebSocket: tests play the server side by hand. */
 export class FakeSocket implements WebSocketLike {

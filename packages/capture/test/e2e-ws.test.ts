@@ -1,39 +1,38 @@
 /**
- * End-to-end check of the network path without Chrome: the real DSP chain (CaptureDsp as
- * run by the worklet → CaptureClock → EnergyGate), the real session runner and stream
- * client, Node's built-in WebSocket, and a local `ws` server speaking the ingest protocol.
+ * End-to-end check of the network path in Node: the real DSP chain (CaptureDsp as run by
+ * the worklet → CaptureClock), CaptureSession (re-blocking → EnergyGate → StreamClient),
+ * Node's built-in WebSocket, and a local `ws` server speaking the ingest protocol.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { CaptureClock } from "../src/audio/clock.js";
-import { CaptureDsp } from "../src/audio/dsp.js";
-import type { StampedBlock } from "../src/audio/gate.js";
-import { leBytesToS16 } from "../src/audio/pcm.js";
-import { CaptureSessionRunner, type SessionDeps } from "../src/offscreen/session.js";
-import type { CaptureStartSpec, FromOffscreen } from "../src/shared/messages.js";
-import type { WebSocketLike } from "../src/stream/client.js";
+import { CaptureClock } from "../src/clock.js";
+import { CaptureDsp } from "../src/dsp.js";
+import { floatToS16, leBytesToS16 } from "../src/pcm.js";
+import { type CaptureEvent, CaptureSession } from "../src/session.js";
 import { FakeIngestServer } from "./fakes/fakeServer.js";
 import { amplitudeAt } from "./fakes/signals.js";
 
 const CTX_RATE = 48_000;
 
 /**
- * Stands in for CapturePipeline: renders `seconds` of synthetic audio in 128-frame quanta
- * through the worklet DSP, maps context frames to wall-clock time with CaptureClock
- * (anchored to Date.now(), as in the browser), and paces itself at `speed`× real time. The
- * wall clock it reports is *virtual* real time (start + audio position), as it would be if
- * the audio had been captured live.
+ * Stands in for the browser pipeline: renders `seconds` of synthetic audio in 128-frame
+ * quanta through the worklet DSP, maps context frames to wall-clock time with CaptureClock
+ * and pushes the blocks into the session, paced at `speed`× real time. The wall clock it
+ * reports is *virtual* real time (start + audio position), as if captured live.
  */
-function syntheticPipeline(pattern: (t: number) => number, seconds: number, speed: number) {
+function syntheticPipeline(
+  session: CaptureSession,
+  pattern: (t: number) => number,
+  seconds: number,
+  speed: number,
+) {
   const started = Date.now();
-  let stopped = false;
-  const startPipeline: SessionDeps["startPipeline"] = async ({ onBlock }) => {
-    const dsp = new CaptureDsp(CTX_RATE);
-    const clock = new CaptureClock();
-    const quantum = new Float32Array(128);
-    const totalQuanta = Math.floor((seconds * CTX_RATE) / 128);
-    let q = 0;
+  const dsp = new CaptureDsp(CTX_RATE);
+  const clock = new CaptureClock();
+  const quantum = new Float32Array(128);
+  const totalQuanta = Math.floor((seconds * CTX_RATE) / 128);
+  let q = 0;
+  const done = new Promise<void>((resolve) => {
     const tick = () => {
-      if (stopped) return;
       // render ~100 ms of audio per tick
       const until = Math.min(totalQuanta, q + Math.ceil((0.1 * CTX_RATE) / 128));
       for (; q < until; q++) {
@@ -41,38 +40,24 @@ function syntheticPipeline(pattern: (t: number) => number, seconds: number, spee
         for (const b of dsp.push([quantum], q * 128)) {
           const ctxSec = (q * 128) / CTX_RATE;
           clock.observe(ctxSec, started + ctxSec * 1000);
-          const block: StampedBlock = {
-            pcm: b.pcm,
-            captureTimeMs: clock.toEpochMs(b.contextFrame / CTX_RATE),
-            discontinuity: b.discontinuity || clock.takeStep(),
-          };
-          onBlock(block);
+          session.pushPcm(
+            b.pcm,
+            clock.toEpochMs(b.contextFrame / CTX_RATE),
+            b.discontinuity || clock.takeStep(),
+          );
         }
       }
       if (q < totalQuanta) setTimeout(tick, 100 / speed);
+      else setTimeout(resolve, 100);
     };
     setTimeout(tick, 0);
-    return {
-      stop() {
-        stopped = true;
-      },
-    };
-  };
-  return {
-    startPipeline,
-    started,
-    done: () => new Promise((r) => setTimeout(r, (seconds * 1000) / speed + 300)),
-  };
+  });
+  return { started, done };
 }
 
 /** 1 s of 440 Hz "speech", 3 s silence, 1 s speech, 1 s silence (+ hangover) */
 const pattern = (t: number) =>
   (t >= 0.5 && t < 1.5) || (t >= 4.5 && t < 5.5) ? 0.3 * Math.sin(2 * Math.PI * 440 * t) : 0;
-
-function fakeTrackStream(): MediaStream {
-  const track = { stop() {}, addEventListener() {} };
-  return { getAudioTracks: () => [track], getTracks: () => [track] } as unknown as MediaStream;
-}
 
 let server: FakeIngestServer;
 let base: string;
@@ -85,38 +70,31 @@ afterEach(async () => {
   await server.stop();
 });
 
-function runner(
-  spec: Partial<CaptureStartSpec>,
-  pipeline: ReturnType<typeof syntheticPipeline>,
-  reports: FromOffscreen[],
+function session(
+  events: CaptureEvent[],
+  extra: Partial<ConstructorParameters<typeof CaptureSession>[0]> = {},
 ) {
-  const full: CaptureStartSpec = {
-    source: "tab",
-    streamId: crypto.randomUUID(),
+  return new CaptureSession({
     serverUrl: base,
     token: "tok_e2e_0123456789abcdef",
-    mode: "audio",
+    source: "tab",
     context: { app: "meet.google.com", title: "Weekly sync" },
-    ...spec,
-  };
-  return new CaptureSessionRunner(full, {
-    openStream: async () => fakeTrackStream(),
-    startPipeline: pipeline.startPipeline,
-    createSocket: (url) => new WebSocket(url) as unknown as WebSocketLike,
-    createTranscriber: async () => null,
-    report: (m) => reports.push(m),
-    isPermissionError: () => false,
+    onEvent: (e) => events.push(e),
+    ...extra,
   });
 }
 
+const phases = (events: CaptureEvent[]) =>
+  events.flatMap((e) => (e.type === "phase" ? [e.phase] : []));
+
 describe("network path end to end (Node WebSocket ↔ local ws server)", () => {
   it("delivers gated, timestamped frames that decode with the protocol codec", async () => {
-    const reports: FromOffscreen[] = [];
-    const pipe = syntheticPipeline(pattern, 7, 10);
-    const r = runner({}, pipe, reports);
+    const events: CaptureEvent[] = [];
+    const r = session(events);
     await r.start();
-    await pipe.done();
-    await r.stop("user");
+    const pipe = syntheticPipeline(r, pattern, 7, 10);
+    await pipe.done;
+    await r.stop();
 
     expect(server.errors).toEqual([]);
     expect(server.streams.size).toBe(1);
@@ -168,10 +146,12 @@ describe("network path end to end (Node WebSocket ↔ local ws server)", () => {
       ),
     ).toBeGreaterThan(0.25);
 
-    const kinds = reports.map((m) => m.kind);
-    expect(kinds).toContain("stream:phase");
-    expect(reports.find((m) => m.kind === "stream:phase" && m.phase === "live")).toBeDefined();
-    expect(kinds.at(-1)).toBe("capture:ended");
+    expect(phases(events)).toEqual(["connecting", "streaming", "ending", "ended"]);
+    expect(await r.closed).toEqual({ reason: "ended" });
+    // level events are throttled by wall time (this ran at 10× speed: ~0.7 s of wall time)
+    const levels = events.filter((e) => e.type === "level");
+    expect(levels.length).toBeGreaterThanOrEqual(2);
+    expect(levels.length).toBeLessThanOrEqual(Math.ceil((Date.now() - pipe.started) / 190) + 1);
   }, 20_000);
 
   it("resumes the same stream after the server drops the connection", async () => {
@@ -182,13 +162,13 @@ describe("network path end to end (Node WebSocket ↔ local ws server)", () => {
         ws.terminate();
       }
     };
-    const reports: FromOffscreen[] = [];
+    const events: CaptureEvent[] = [];
     const tone440 = (t: number) => 0.3 * Math.sin(2 * Math.PI * 440 * t);
-    const pipe = syntheticPipeline(tone440, 4, 4);
-    const r = runner({ source: "mic" }, pipe, reports);
+    const r = session(events, { source: "mic" });
     await r.start();
-    await pipe.done();
-    await r.stop("user");
+    const pipe = syntheticPipeline(r, tone440, 4, 4);
+    await pipe.done;
+    await r.stop();
 
     expect(server.errors).toEqual([]);
     expect(server.streams.size).toBe(1);
@@ -202,19 +182,64 @@ describe("network path end to end (Node WebSocket ↔ local ws server)", () => {
     expect(stream.frames.length).toBeGreaterThanOrEqual(seqs.at(-1)! - 1);
     const ts = stream.frames.map((f) => f.captureTimeMs);
     for (let i = 1; i < ts.length; i++) expect(ts[i]!).toBeGreaterThan(ts[i - 1]!);
-    expect(reports.some((m) => m.kind === "stream:phase" && m.phase === "reconnecting")).toBe(true);
+    expect(phases(events)).toContain("reconnecting");
+    expect(phases(events).at(-1)).toBe("ended");
+    expect(events.some((e) => e.type === "error" && e.fatal)).toBe(false);
   }, 20_000);
 
   it("reports a fatal consent_required and does not retry", async () => {
     server.rejectNextHelloWith = "consent_required";
-    const reports: FromOffscreen[] = [];
-    const pipe = syntheticPipeline(() => 0.2, 1, 4);
-    const r = runner({}, pipe, reports);
+    const events: CaptureEvent[] = [];
+    const r = session(events);
     await r.start();
-    await new Promise((res) => setTimeout(res, 1500));
-    const fatal = reports.find((m) => m.kind === "stream:fatal");
-    expect(fatal).toMatchObject({ code: "consent_required", message: "refused: consent_required" });
-    expect(reports.at(-1)?.kind).toBe("capture:ended");
+    syntheticPipeline(r, () => 0.2, 1, 4);
+    expect(await r.closed).toEqual({ reason: "fatal", code: "consent_required" });
+    await new Promise((res) => setTimeout(res, 1500)); // would have retried by now
+    const errors = events.filter((e) => e.type === "error");
+    expect(errors).toEqual([
+      {
+        type: "error",
+        code: "consent_required",
+        message: "refused: consent_required",
+        fatal: true,
+      },
+    ]);
+    // "ended" comes after the error event, and nothing reconnects
+    expect(events.indexOf(errors[0]!)).toBeLessThan(
+      events.findIndex((e) => e.type === "phase" && e.phase === "ended"),
+    );
+    expect(phases(events)).not.toContain("reconnecting");
     expect(server.streams.size).toBe(0);
+    await r.stop(); // no-op after the end, resolves
+  }, 10_000);
+
+  it("re-blocks arbitrary chunk sizes from a sample-counting source (agent style)", async () => {
+    const events: CaptureEvent[] = [];
+    const r = session(events, { source: "ambient", context: { title: "desk" } });
+    await r.start();
+    const t0 = Date.now();
+    // 2 s of tone in odd-sized chunks (like ffmpeg's pipe reads), stamped by sample count
+    const total = 32_000;
+    const all = floatToS16(
+      Float32Array.from(
+        { length: total },
+        (_, i) => 0.3 * Math.sin((2 * Math.PI * 300 * i) / 16_000),
+      ),
+    );
+    let off = 0;
+    while (off < total) {
+      const n = Math.min(1777, total - off);
+      r.pushPcm(all.subarray(off, off + n), t0 + (off / 16_000) * 1000);
+      off += n;
+    }
+    await r.stop();
+    const stream = [...server.streams.values()][0]!;
+    expect(stream.hello.source).toBe("ambient");
+    const frames = stream.frames;
+    // 10 full 200 ms frames; the tail (none here) would be a short final frame
+    expect(frames.map((f) => f.payload.byteLength)).toEqual(Array(10).fill(6400));
+    frames.forEach((f, i) => {
+      expect(f.captureTimeMs).toBeCloseTo(t0 + i * 200, 6);
+    });
   }, 10_000);
 });

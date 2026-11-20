@@ -2,6 +2,7 @@ packages:
   - "apps/server"
   - "apps/web"
   - "apps/extension"
+  - "apps/agent"
   - "packages/*"
 onlyBuiltDependencies:
   - esbuild

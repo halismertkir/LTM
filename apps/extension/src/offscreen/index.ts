@@ -5,15 +5,16 @@
  * so everything a session needs arrives in the `capture:start` message, and everything
  * the rest of the extension needs to know goes back as messages to the worker.
  */
+
+import { WORKLET_FILE } from "@ltm/capture";
+import { startBrowserCapture } from "@ltm/capture/browser";
 import {
   type ActiveCaptureInfo,
   type CaptureSource,
   type FromOffscreen,
   isToOffscreen,
 } from "../shared/messages.js";
-import type { WebSocketLike } from "../stream/client.js";
 import { isPermissionError, openMicStream, openTabStream } from "./media.js";
-import { CapturePipeline } from "./pipeline.js";
 import { CaptureSessionRunner } from "./session.js";
 import { createTranscriber } from "./transcriber.js";
 
@@ -43,10 +44,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           }
           return openMicStream();
         },
-        startPipeline: (opts) => CapturePipeline.start(opts),
-        // The DOM WebSocket satisfies WebSocketLike structurally except for the handlers'
-        // `this`/event parameter types, which the client never relies on.
-        createSocket: (url) => new WebSocket(url) as unknown as WebSocketLike,
+        startCapture: startBrowserCapture,
+        // Emitted as its own file by vite.config.ts from "@ltm/capture/worklet".
+        workletUrl: chrome.runtime.getURL(WORKLET_FILE),
         createTranscriber,
         report,
         isPermissionError,

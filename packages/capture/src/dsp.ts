@@ -3,7 +3,7 @@ import { StreamingResampler } from "./resampler.js";
 
 /** Name under which worklet.ts registers its processor. */
 export const PROCESSOR_NAME = "ltm-capture";
-/** Built file name of the worklet module (see vite.config.ts). */
+/** Conventional file name for the built worklet module (the extension emits it under this name). */
 export const WORKLET_FILE = "capture-worklet.js";
 
 export const TARGET_SAMPLE_RATE = 16_000;
