@@ -17,9 +17,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^1.11.0",
-    "@electric-sql/pglite": "^0.5.17",
-    "@electric-sql/pglite-pgvector": "^0.0.18",
+    "@anthropic-ai/sdk": "^1.12.0",
+    "@electric-sql/pglite": "^0.6.0",
+    "@electric-sql/pglite-pgvector": "^0.1.0",
     "@fastify/cookie": "^11.1.5",
     "@fastify/multipart": "^10.1.9",
     "@fastify/static": "^10.1.12",
